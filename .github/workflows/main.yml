@@ -1,0 +1,27 @@
+name: Build iOS Dylib
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-13
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        run: |
+          # 自动配置云端苹果编译机
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          
+      - name: Compile Tweak
+        run: |
+          export THEOS=~/theos
+          # 智能兼容查找代码所在层级并编译
+          if [ -d "HWHealthSideload" ]; then cd HWHealthSideload; fi
+          make
+          
+      - name: Upload Dylib Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: HWHealthSideload_Compiled_Dylib
+          path: ./**/.theos/obj/debug/*.dylib
