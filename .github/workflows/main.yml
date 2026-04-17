@@ -18,12 +18,12 @@ jobs:
           if [ -d "HWHealthSideload" ]; then cd HWHealthSideload; fi
           make
           
-          # 创建一个显式的导出目录，把 dylib 直接复制出来，防止被当作隐藏文件过滤掉
           mkdir -p ../OUTPUT_DYLIB
           find . -name "*.dylib" -exec cp {} ../OUTPUT_DYLIB/ \;
+          ls -la ../OUTPUT_DYLIB/
           
       - name: Upload Dylib Output
         uses: actions/upload-artifact@v4
         with:
-          name: HWHealthSideload_Compiled_Dylib
+          name: HWHealthSideload_v2_Dylib
           path: OUTPUT_DYLIB/
