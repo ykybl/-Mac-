@@ -1,9 +1,9 @@
 Package: com.geeker.hwhealthsideload
 Name: HWHealthSideload
 Depends: mobilesubstrate
-Version: 1.0.0
+Version: 2.0.0
 Architecture: iphoneos-arm
-Description: Sideload helper for Huawei Health to bypass token restrictions and trigger native WiFi transfer.
+Description: Sideload helper for Huawei Health - v2 with sign spoof and SSL bypass.
 Maintainer: Geeker
 Author: Geeker
 Section: Tweaks

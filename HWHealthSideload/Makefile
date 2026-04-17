@@ -8,5 +8,6 @@ TWEAK_NAME = HWHealthSideload
 
 HWHealthSideload_FILES = Tweak.xm fishhook.c
 HWHealthSideload_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+HWHealthSideload_FRAMEWORKS = UIKit Foundation Security
 
 include $(THEOS_MAKE_PATH)/tweak.mk
