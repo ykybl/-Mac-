@@ -4,22 +4,20 @@
 #import <sys/sysctl.h>
 
 // ============================================================================
-//  HWHealthSideload v4.0 — 应用市场安装劫持版
-//  核心思路: Hook 华为手表应用市场的安装流程
-//           把即将发送到手表的 HAP 文件替换为我们自己的
+//  HWHealthSideload v4.1 — 编译安全版
+//  只保留 100% 能编译通过的 Hook + 应用市场劫持逻辑
 // ============================================================================
 
-// 存储用户选择的 HAP 文件路径（全局）
-static NSString *g_selectedHapPath = nil;
-static BOOL g_interceptEnabled = NO;
+static NSString *g_hapPath = nil;
+static BOOL g_intercept = NO;
 
 // ============================================================================
-// Part 1: Anti-Debug
+// Part 1: Anti-Debug (fishhook)
 // ============================================================================
 
 static int (*orig_ptrace)(int, pid_t, caddr_t, int);
 static int my_ptrace(int req, pid_t pid, caddr_t addr, int data) {
-    if (req == 31) { return 0; }
+    if (req == 31) return 0;
     return orig_ptrace(req, pid, addr, data);
 }
 
@@ -29,9 +27,8 @@ static int my_sysctl(int *name, u_int namelen, void *info, size_t *infosize, voi
     if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC &&
         name[2] == KERN_PROC_PID && info) {
         struct kinfo_proc *p = (struct kinfo_proc *)info;
-        if (p->kp_proc.p_flag & P_TRACED) {
+        if (p->kp_proc.p_flag & P_TRACED)
             p->kp_proc.p_flag &= ~P_TRACED;
-        }
     }
     return ret;
 }
@@ -41,109 +38,55 @@ static int my_sysctl(int *name, u_int namelen, void *info, size_t *infosize, voi
 // ============================================================================
 
 %hook NSBundle
-
 - (NSString *)bundleIdentifier {
-    if ([self isEqual:[NSBundle mainBundle]]) {
+    if ([self isEqual:[NSBundle mainBundle]])
         return @"com.huawei.iossporthealth";
-    }
     return %orig;
 }
-
 - (id)objectForInfoDictionaryKey:(NSString *)key {
-    if ([self isEqual:[NSBundle mainBundle]]) {
-        if ([key isEqualToString:@"CFBundleIdentifier"]) {
-            return @"com.huawei.iossporthealth";
-        }
-    }
+    if ([self isEqual:[NSBundle mainBundle]] &&
+        [key isEqualToString:@"CFBundleIdentifier"])
+        return @"com.huawei.iossporthealth";
     return %orig;
 }
-
 %end
 
 // ============================================================================
-// Part 3: 核心拦截 — Hook 文件路径读取
-// 当 App 要读取 HAP 文件路径发送给手表时，我们偷梁换柱
-// ============================================================================
-
-// Hook NSString 的路径相关方法，拦截所有含 .hap 的路径
-%hook NSString
-
-// 当 App 询问文件是否存在、或者拼接路径时，注入我们的文件
-- (BOOL)hasSuffix:(NSString *)suffix {
-    BOOL result = %orig;
-    // 监控对 .hap 后缀的检查
-    if ([suffix isEqualToString:@".hap"] && result && g_interceptEnabled && g_selectedHapPath) {
-        NSLog(@"[HWSideload] 🎯 检测到 .hap 路径访问: %@", self);
-    }
-    return result;
-}
-
-%end
-
-// ============================================================================
-// Part 4: Hook NSFileManager — 拦截 HAP 文件的读取/复制
+// Part 3: NSFileManager 拦截 — 替换 HAP 文件复制
 // ============================================================================
 
 %hook NSFileManager
 
-// 当 App 要复制某个 HAP 文件时，把源路径替换成我们的
-- (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError **)error {
-    if (g_interceptEnabled && g_selectedHapPath &&
-        [srcPath.pathExtension.lowercaseString isEqualToString:@"hap"] &&
-        ![srcPath isEqualToString:g_selectedHapPath]) {
-
-        NSLog(@"[HWSideload] 🔀 HAP 文件路径拦截!");
-        NSLog(@"[HWSideload]   原始路径: %@", srcPath);
-        NSLog(@"[HWSideload]   替换为:  %@", g_selectedHapPath);
-
-        // 将目标替换为我们的文件
-        return %orig(g_selectedHapPath, dstPath, error);
+- (BOOL)copyItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
+    if (g_intercept && g_hapPath &&
+        [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
+        ![src isEqualToString:g_hapPath]) {
+        NSLog(@"[HWSideload] 🔀 拦截复制: %@ → 替换为 %@", src, g_hapPath);
+        return %orig(g_hapPath, dst, err);
     }
     return %orig;
 }
 
-- (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError **)error {
-    if (g_interceptEnabled && g_selectedHapPath &&
-        [srcURL.pathExtension.lowercaseString isEqualToString:@"hap"] &&
-        ![srcURL.path isEqualToString:g_selectedHapPath]) {
-
-        NSLog(@"[HWSideload] 🔀 HAP URL 拦截!");
-        NSLog(@"[HWSideload]   原始: %@", srcURL.path);
-        NSLog(@"[HWSideload]   替换: %@", g_selectedHapPath);
-
-        NSURL *ourURL = [NSURL fileURLWithPath:g_selectedHapPath];
-        return %orig(ourURL, dstURL, error);
+- (BOOL)copyItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
+    if (g_intercept && g_hapPath &&
+        [[srcU pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
+        ![srcU.path isEqualToString:g_hapPath]) {
+        NSLog(@"[HWSideload] 🔀 URL拦截: %@ → %@", srcU.path, g_hapPath);
+        NSURL *u = [NSURL fileURLWithPath:g_hapPath];
+        return %orig(u, dstU, err);
     }
     return %orig;
 }
 
-%end
-
-// ============================================================================
-// Part 5: Hook NSData — 拦截 HAP 文件数据的读取
-// ============================================================================
-
-%hook NSData
-
-+ (instancetype)dataWithContentsOfFile:(NSString *)path {
-    if (g_interceptEnabled && g_selectedHapPath &&
-        [path.pathExtension.lowercaseString isEqualToString:@"hap"] &&
-        ![path isEqualToString:g_selectedHapPath]) {
-
-        NSLog(@"[HWSideload] 📦 NSData 读取 HAP 拦截: %@ → %@", path, g_selectedHapPath);
-        return %orig(g_selectedHapPath);
-    }
-    return %orig;
-}
-
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url {
-    if (g_interceptEnabled && g_selectedHapPath &&
-        [url.pathExtension.lowercaseString isEqualToString:@"hap"] &&
-        ![url.path isEqualToString:g_selectedHapPath]) {
-
-        NSLog(@"[HWSideload] 📦 NSData URL 读取 HAP 拦截: %@", url.path);
-        NSURL *ours = [NSURL fileURLWithPath:g_selectedHapPath];
-        return %orig(ours);
+// 该方法用于移动文件，应用市场也可能用
+- (BOOL)moveItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
+    if (g_intercept && g_hapPath &&
+        [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
+        ![src isEqualToString:g_hapPath]) {
+        NSLog(@"[HWSideload] 🔀 移动拦截: 先复制我们的文件到 %@", dst);
+        // 改用复制（因为源文件是我们不想动的）
+        [self removeItemAtPath:dst error:nil];
+        return [self copyItemAtPath:g_hapPath toPath:dst error:err];
     }
     return %orig;
 }
@@ -151,108 +94,70 @@ static int my_sysctl(int *name, u_int namelen, void *info, size_t *infosize, voi
 %end
 
 // ============================================================================
-// Part 6: Hook NSURLRequest — 拦截下载 HAP 的网络请求
-// 当应用市场从华为服务器下载 HAP 时，直接返回本地文件
+// Part 4: 监控所有文件写入 — 用 fishhook 拦截 C 层 open()
+// 当应用打开 .hap 文件读取时，重定向到我们的文件
 // ============================================================================
 
-%hook NSURLSession
+static int (*orig_open)(const char *, int, ...);
+static int my_open(const char *path, int flags, ...) {
+    mode_t mode = 0;
+    if (flags & O_CREAT) {
+        va_list ap;
+        va_start(ap, flags);
+        mode = (mode_t)va_arg(ap, int);
+        va_end(ap);
+    }
 
-- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request
-                                    completionHandler:(void (^)(NSURL *, NSURLResponse *, NSError *))completionHandler {
-    NSString *urlStr = request.URL.absoluteString;
-    
-    // 监控所有 HAP 文件的下载请求
-    if ([urlStr containsString:@".hap"] || [urlStr containsString:@"appstore"] ||
-        [urlStr containsString:@"market"] || [urlStr containsString:@"download"]) {
-        
-        NSLog(@"[HWSideload] 🌐 检测到下载请求: %@", urlStr);
-        
-        // 如果拦截模式开启且有文件，劫持这个下载任务
-        if (g_interceptEnabled && g_selectedHapPath) {
-            NSLog(@"[HWSideload] ✂️ 劫持下载 → 使用本地 HAP");
-
-            // 立刻回调，返回我们本地的文件 URL，模拟下载完成
-            if (completionHandler) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    NSURL *localURL = [NSURL fileURLWithPath:g_selectedHapPath];
-                    NSURLResponse *fakeResp = [[NSURLResponse alloc]
-                        initWithURL:request.URL
-                           MIMEType:@"application/vnd.huawei.hap"
-              expectedContentLength:-1
-                   textEncodingName:nil];
-                    completionHandler(localURL, fakeResp, nil);
-                });
+    // 只在读取模式下拦截 .hap 文件
+    if (g_intercept && g_hapPath && path != NULL) {
+        size_t len = strlen(path);
+        if (len > 4 && strcasecmp(path + len - 4, ".hap") == 0) {
+            // 不拦截我们自己的文件
+            if (strcmp(path, [g_hapPath UTF8String]) != 0) {
+                NSLog(@"[HWSideload] 📂 open() 拦截: %s → %s", path, [g_hapPath UTF8String]);
+                path = [g_hapPath UTF8String];
             }
-            // 返回一个假的立刻完成的 task（不会真正发请求）
-            return %orig;
         }
     }
-    return %orig;
+
+    if (flags & O_CREAT) {
+        return orig_open(path, flags, mode);
+    }
+    return orig_open(path, flags);
 }
 
-%end
-
 // ============================================================================
-// Part 7: 运行时探测 — 专门搜索应用市场/安装相关类
+// Part 5: 运行时探测
 // ============================================================================
 
-static NSString *searchClasses(NSArray<NSString *> *keywords) {
-    NSMutableString *result = [NSMutableString string];
-    int total = objc_getClassList(NULL, 0);
-    Class *classes = (Class *)malloc(sizeof(Class) * total);
-    objc_getClassList(classes, total);
+static NSString *searchClasses(NSArray *keywords) {
+    NSMutableString *r = [NSMutableString string];
+    int n = objc_getClassList(NULL, 0);
+    Class *cls = (Class *)malloc(sizeof(Class) * n);
+    objc_getClassList(cls, n);
 
     for (NSString *kw in keywords) {
-        int found = 0;
-        [result appendFormat:@"\n── 关键词: \"%@\" ──\n", kw];
-        for (int i = 0; i < total; i++) {
-            NSString *name = NSStringFromClass(classes[i]);
+        int f = 0;
+        [r appendFormat:@"\n─ \"%@\" ─\n", kw];
+        for (int i = 0; i < n; i++) {
+            NSString *name = NSStringFromClass(cls[i]);
             if ([name localizedCaseInsensitiveContainsString:kw]) {
-                [result appendFormat:@"  %@\n", name];
-                found++;
-                if (found >= 20) {
-                    [result appendString:@"  ...(截断)\n"];
-                    break;
-                }
+                [r appendFormat:@"  %@\n", name];
+                if (++f >= 15) { [r appendString:@"  ...\n"]; break; }
             }
         }
-        if (found == 0) [result appendString:@"  (无匹配)\n"];
+        if (!f) [r appendString:@"  (无)\n"];
     }
-
-    free(classes);
-    return result;
-}
-
-static NSString *dumpMethods(NSString *clsName) {
-    Class cls = NSClassFromString(clsName);
-    if (!cls) return [NSString stringWithFormat:@"类 %@ 不存在\n", clsName];
-
-    NSMutableString *r = [NSMutableString stringWithFormat:@"📋 %@:\n", clsName];
-    unsigned int cnt = 0;
-    Method *ms = class_copyMethodList(cls, &cnt);
-    for (unsigned int i = 0; i < cnt; i++) {
-        [r appendFormat:@"  %@\n", NSStringFromSelector(method_getName(ms[i]))];
-    }
-    free(ms);
-
-    // 类方法
-    Method *cms = class_copyMethodList(object_getClass(cls), &cnt);
-    for (unsigned int i = 0; i < cnt; i++) {
-        [r appendFormat:@"  +%@\n", NSStringFromSelector(method_getName(cms[i]))];
-    }
-    free(cms);
-
-    [r appendFormat:@"共 %u 个方法\n", cnt];
+    free(cls);
     return r;
 }
 
 // ============================================================================
-// Part 8: 悬浮按钮 + 操作菜单
+// Part 6: UI
 // ============================================================================
 
 @interface HWSideloadUI : NSObject <UIDocumentPickerDelegate>
 @property (nonatomic, strong) UIButton *btn;
-@property (nonatomic, copy) NSString *lastFilePath;
 + (instancetype)shared;
 @end
 
@@ -283,10 +188,11 @@ static NSString *dumpMethods(NSString *clsName) {
     self.btn.layer.shadowOpacity = 0.4;
     self.btn.layer.zPosition = 99999;
 
-    [self.btn addTarget:self action:@selector(mainMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.btn addTarget:self action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];
     [w addSubview:self.btn];
 
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(drag:)];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
+        initWithTarget:self action:@selector(drag:)];
     [self.btn addGestureRecognizer:pan];
 }
 
@@ -296,92 +202,104 @@ static NSString *dumpMethods(NSString *clsName) {
     [r setTranslation:CGPointZero inView:r.view.superview];
 }
 
-- (void)mainMenu {
-    NSString *statusStr = g_selectedHapPath
+- (void)menu {
+    NSString *st = g_hapPath
         ? [NSString stringWithFormat:@"已装弹: %@\n拦截: %@",
-           [g_selectedHapPath lastPathComponent],
-           g_interceptEnabled ? @"🟢 开启" : @"🔴 关闭"]
-        : @"尚未选择 HAP 文件";
+           [g_hapPath lastPathComponent], g_intercept ? @"🟢开" : @"🔴关"]
+        : @"尚未选择文件";
 
-    UIAlertController *menu = [UIAlertController
-        alertControllerWithTitle:@"🔥 HAP 侧载控制台"
-        message:statusStr
-        preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *m = [UIAlertController
+        alertControllerWithTitle:@"🔥 HAP 侧载"
+        message:st preferredStyle:UIAlertControllerStyleActionSheet];
 
-    [menu addAction:[UIAlertAction actionWithTitle:@"📁 选择 .hap 文件" style:UIAlertActionStyleDefault handler:^(id a) {
+    [m addAction:[UIAlertAction actionWithTitle:@"📁 选择 .hap 文件"
+        style:UIAlertActionStyleDefault handler:^(id _) {
         [self pickFile];
     }]];
 
-    if (g_selectedHapPath) {
-        NSString *interceptTitle = g_interceptEnabled
-            ? @"🔴 关闭拦截模式"
-            : @"🟢 开启拦截模式（然后去应用市场安装任意应用）";
-        [menu addAction:[UIAlertAction actionWithTitle:interceptTitle style:UIAlertActionStyleDefault handler:^(id a) {
-            g_interceptEnabled = !g_interceptEnabled;
-            NSString *msg = g_interceptEnabled
-                ? @"✅ 拦截已开启！\n\n现在去"发现"→ 应用市场，随便点击安装任意一款手表应用，系统会自动把它替换成你的 HAP 文件发送到手表。"
-                : @"🔴 拦截已关闭，恢复正常安装流程。";
-            [self alert:@"拦截模式" msg:msg];
+    if (g_hapPath) {
+        NSString *t = g_intercept
+            ? @"🔴 关闭拦截"
+            : @"🟢 开启拦截（然后去市场安装任意应用）";
+        [m addAction:[UIAlertAction actionWithTitle:t
+            style:UIAlertActionStyleDefault handler:^(id _) {
+            g_intercept = !g_intercept;
+            [self.btn setTitle:(g_intercept ? @"🟢拦截中" : @"侧载HAP")
+                      forState:UIControlStateNormal];
+            self.btn.backgroundColor = g_intercept
+                ? [UIColor colorWithRed:0.2 green:0.8 blue:0.3 alpha:0.95]
+                : [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
+            NSString *msg = g_intercept
+                ? @"✅ 拦截已开启！\n\n按钮已变绿。\n现在去应用市场，点任意一款应用的「安装」按钮。\n系统会自动替换为你的 HAP 文件。"
+                : @"拦截已关闭。";
+            [self alert:@"状态" msg:msg];
         }]];
     }
 
-    [menu addAction:[UIAlertAction actionWithTitle:@"🔍 探测应用市场类" style:UIAlertActionStyleDefault handler:^(id a) {
-        NSString *result = searchClasses(@[@"Market", @"AppStore", @"Install", @"Watch", @"Wear", @"Hap", @"Application"]);
-        NSLog(@"[HWSideload] 探测结果:\n%@", result);
-        [self alert:@"探测结果（同时已输出到日志）" msg:result];
+    [m addAction:[UIAlertAction actionWithTitle:@"🔍 探测相关类"
+        style:UIAlertActionStyleDefault handler:^(id _) {
+        NSString *r = searchClasses(@[@"Market", @"Install", @"Hap",
+            @"Transfer", @"Download", @"AppStore"]);
+        NSLog(@"[HWSideload]\n%@", r);
+        [self alert:@"探测结果" msg:r];
     }]];
 
-    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [m addAction:[UIAlertAction actionWithTitle:@"取消"
+        style:UIAlertActionStyleCancel handler:nil]];
 
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
     while (vc.presentedViewController) vc = vc.presentedViewController;
-    [vc presentViewController:menu animated:YES completion:nil];
+    [vc presentViewController:m animated:YES completion:nil];
 }
 
 - (void)pickFile {
-    UIDocumentPickerViewController *p =
-        [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.data"]
-                                                              inMode:UIDocumentPickerModeImport];
+    UIDocumentPickerViewController *p = [[UIDocumentPickerViewController alloc]
+        initWithDocumentTypes:@[@"public.data"] inMode:UIDocumentPickerModeImport];
     p.delegate = self;
     p.allowsMultipleSelection = NO;
     p.modalPresentationStyle = UIModalPresentationFullScreen;
-
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
     while (vc.presentedViewController) vc = vc.presentedViewController;
     [vc presentViewController:p animated:YES completion:nil];
 }
 
-- (void)documentPicker:(UIDocumentPickerViewController *)c didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+- (void)documentPicker:(UIDocumentPickerViewController *)c
+    didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *src = urls.firstObject;
     if (!src) return;
 
-    BOOL ok = [src startAccessingSecurityScopedResource];
-    NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *dst = [caches stringByAppendingPathComponent:src.lastPathComponent];
-
+    BOOL a = [src startAccessingSecurityScopedResource];
+    NSString *dir = [NSSearchPathForDirectoriesInDomains(
+        NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *dst = [dir stringByAppendingPathComponent:src.lastPathComponent];
     NSFileManager *fm = [NSFileManager defaultManager];
     [fm removeItemAtPath:dst error:nil];
     NSError *err;
     [fm copyItemAtPath:src.path toPath:dst error:&err];
-    if (ok) [src stopAccessingSecurityScopedResource];
+    if (a) [src stopAccessingSecurityScopedResource];
 
     if (!err) {
-        g_selectedHapPath = dst;
-        self.lastFilePath = dst;
-        NSDictionary *attr = [fm attributesOfItemAtPath:dst error:nil];
-        unsigned long long sz = [attr fileSize];
-        [self alert:@"✅ 装弹成功！"
-               msg:[NSString stringWithFormat:@"文件: %@\n大小: %.1f MB\n\n现在点按钮 → 开启拦截模式\n然后去手表应用市场随便点安装一个应用，系统会把安装包自动替换成你的文件！",
+        g_hapPath = [dst copy];
+        NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
+        unsigned long long sz = [at fileSize];
+        [self alert:@"✅ 装弹成功"
+               msg:[NSString stringWithFormat:
+                    @"%@  (%.1f MB)\n\n"
+                    @"下一步:\n"
+                    @"1. 点按钮 → 开启拦截\n"
+                    @"2. 去应用市场安装任意应用\n"
+                    @"3. 手表实际收到的是你的文件",
                     [dst lastPathComponent], sz/1048576.0]];
     } else {
         [self alert:@"❌" msg:err.localizedDescription];
     }
 }
 
-- (void)alert:(NSString *)title msg:(NSString *)msg {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:title
-        message:msg preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+- (void)alert:(NSString *)t msg:(NSString *)m {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:t
+        message:m preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"好"
+        style:UIAlertActionStyleDefault handler:nil]];
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
     while (vc.presentedViewController) vc = vc.presentedViewController;
     [vc presentViewController:a animated:YES completion:nil];
@@ -390,29 +308,30 @@ static NSString *dumpMethods(NSString *clsName) {
 @end
 
 // ============================================================================
-// Part 9: Window Hook
+// Part 7: Window Hook
 // ============================================================================
 
 %hook UIWindow
 - (void)makeKeyAndVisible {
     %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
         [[HWSideloadUI shared] attach:self];
     });
 }
 %end
 
 // ============================================================================
-// Part 10: Constructor
+// Part 8: Constructor
 // ============================================================================
 
 %ctor {
-    NSLog(@"[HWSideload] v4.0 — 市场安装劫持版 loaded");
-    struct rebinding hooks[] = {
+    NSLog(@"[HWSideload] v4.1 loaded");
+    struct rebinding h[] = {
         {"ptrace", (void *)my_ptrace, (void **)&orig_ptrace},
         {"sysctl", (void *)my_sysctl, (void **)&orig_sysctl},
+        {"open",   (void *)my_open,   (void **)&orig_open},
     };
-    rebind_symbols(hooks, 2);
-    NSLog(@"[HWSideload] hooks: ptrace + sysctl active");
-    NSLog(@"[HWSideload] 文件拦截层: NSFileManager + NSData + NSURLSession → 待激活");
+    rebind_symbols(h, 3);
+    NSLog(@"[HWSideload] hooks: ptrace+sysctl+open active");
 }
