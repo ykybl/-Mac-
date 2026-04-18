@@ -45,29 +45,34 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
 
 static NSString *g_realBundleId = nil;
 
-// ---- 核心替换函数：处理单条请求的所有 Bundle ID ----
+// ---- 核心替换函数：精准替换，不破坏认证 Session ----
 static NSMutableURLRequest *sanitizeRequest(NSURLRequest *req) {
-    if (!g_realBundleId) return [req mutableCopy];
+    if (!g_realBundleId || !req) return [req mutableCopy];
     NSString *realID = g_realBundleId;
     NSString *fakeID = @"com.huawei.iossporthealth";
     if ([realID isEqualToString:fakeID]) return [req mutableCopy];
 
-    NSMutableURLRequest *m = [req mutableCopy];
-
-    // 1. URL (如果 query param 或 path 中包含 Bundle ID)
-    NSString *urlStr = m.URL.absoluteString;
-    if ([urlStr containsString:realID]) {
-        NSString *fixed = [urlStr stringByReplacingOccurrencesOfString:realID withString:fakeID];
-        m.URL = [NSURL URLWithString:fixed];
-        HWSLog([NSString stringWithFormat:@"🔐 URL BundleID->%@", m.URL.host]);
+    // ★ 跳过华为 ID 认证服务器 — token 绑定了 app，替换会导致 session 失效
+    NSString *host = req.URL.host.lowercaseString ?: @"";
+    if ([host containsString:@"hwid.platform.hicloud.com"]
+        || [host containsString:@"account.hicloud.com"]) {
+        return [req mutableCopy];
     }
 
-    // 2. 全量 Header
+    NSMutableURLRequest *m = [req mutableCopy];
+
+    // ★ 不替换 URL（URL 中可能含 token 签名，替换会破坏签名验证）
+    // 只替换 Header 和 Body
+
+    // Header（跳过认证相关头部，避免破坏 token）
+    NSSet *skipHeaders = [NSSet setWithObjects:
+        @"authorization", @"cookie", @"x-access-token", @"x-auth-token", nil];
     NSDictionary *headers = m.allHTTPHeaderFields;
     if (headers) {
         NSMutableDictionary *newH = [headers mutableCopy];
         BOOL ch = NO;
         for (NSString *k in headers) {
+            if ([skipHeaders containsObject:k.lowercaseString]) continue;
             NSString *v = headers[k];
             if ([v containsString:realID]) {
                 newH[k] = [v stringByReplacingOccurrencesOfString:realID withString:fakeID];
@@ -76,18 +81,18 @@ static NSMutableURLRequest *sanitizeRequest(NSURLRequest *req) {
         }
         if (ch) {
             [m setAllHTTPHeaderFields:newH];
-            HWSLog(@"🔐 Header BundleID 已替换");
+            HWSLog([NSString stringWithFormat:@"🔐 Header BundleID -> %@", host]);
         }
     }
 
-    // 3. Body (JSON/Form 等 UTF8 文本)
+    // Body（JSON/Form 文本，不处理二进制或加密体）
     NSData *body = m.HTTPBody;
-    if (body) {
+    if (body && body.length < 65536) { // 跳过过大的 body（可能是文件流）
         NSString *bs = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding];
         if (bs && [bs containsString:realID]) {
             m.HTTPBody = [[bs stringByReplacingOccurrencesOfString:realID withString:fakeID]
                           dataUsingEncoding:NSUTF8StringEncoding];
-            HWSLog(@"🔐 Body BundleID 已替换");
+            HWSLog([NSString stringWithFormat:@"🔐 Body BundleID -> %@", host]);
         }
     }
     return m;
