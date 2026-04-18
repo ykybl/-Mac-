@@ -190,47 +190,54 @@ static BOOL isTargetExt(NSString *path) {
         HWSLog(@"💥 劫持 moveItemAtURL!");
         [self removeItemAtURL:dstU error:nil];
         
-        // 当我们截获真实下载时，由于用户肯定在商店页面，所以类肯定加载了。
-        // 这里立即抓取底层类的方法列表！扫描全部类以支持 Swift 命名空间 (如 HuaweiWear.SHWatchAppStoreManager)
+        // 这里我们不再去猜类名了。我们要暴力扫描全宇宙（当前进程的所有类和所有方法）。
+        // 只要方法名里包含 SendFile, TransferFile, PushFile, InstallApp, SendData, InstallPkg，我们就把它揪出来！
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-            NSArray *targets = @[@"SHWatchAppStoreManager", @"APAppInstallationManager", @"HWDSidebandManager", @"SHHapVersionRequest", @"BMAppInstallManager", @"HWWearablePkgInstallation", @"WearableDevice"];
+            HWSLog(@"\n\n====== 开始全宇宙搜索越狱通信接口 ======");
+            
+            NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata"];
             
             int n = objc_getClassList(NULL, 0);
             Class *classes = (Class *)malloc(sizeof(Class) * n);
             objc_getClassList(classes, n);
             
-            BOOL foundAny = NO;
             for (int i = 0; i < n; i++) {
-                NSString *name = NSStringFromClass(classes[i]);
-                for (NSString *t in targets) {
-                    if ([name containsString:t]) {
-                        foundAny = YES;
-                        HWSLog([NSString stringWithFormat:@"\n=== [%@] ===", name]);
-                        
-                        unsigned int count = 0;
-                        Method *methods = class_copyMethodList(classes[i], &count);
-                        for (unsigned int m = 0; m < count; m++) {
-                            HWSLog([NSString stringWithFormat:@"- %@", NSStringFromSelector(method_getName(methods[m]))]);
+                NSString *clsName = NSStringFromClass(classes[i]);
+                // 跳过一些明显无关的系统类，加快速度并防止崩溃
+                if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) {
+                    continue;
+                }
+                
+                unsigned int count = 0;
+                Method *methods = class_copyMethodList(classes[i], &count);
+                for (unsigned int m = 0; m < count; m++) {
+                    NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                    for (NSString *kw in mKws) {
+                        if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                            HWSLog([NSString stringWithFormat:@"🎯 发现目标方法: -[%@ %@]", clsName, mName]);
+                            break;
                         }
-                        free(methods);
-                        
-                        // Class Methods
-                        Method *classMethods = class_copyMethodList(object_getClass((id)classes[i]), &count);
-                        for (unsigned int m = 0; m < count; m++) {
-                            HWSLog([NSString stringWithFormat:@"+ %@", NSStringFromSelector(method_getName(classMethods[m]))]);
-                        }
-                        free(classMethods);
                     }
                 }
+                if (methods) free(methods);
+                
+                methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
+                for (unsigned int m = 0; m < count; m++) {
+                    NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                    for (NSString *kw in mKws) {
+                        if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                            HWSLog([NSString stringWithFormat:@"🎯 发现目标方法: +[%@ %@]", clsName, mName]);
+                            break;
+                        }
+                    }
+                }
+                if (methods) free(methods);
             }
             free(classes);
-            if (!foundAny) {
-                HWSLog(@"❌ 遍历了全部类，竟然还是没找到目标类！");
-            } else {
-                HWSLog(@"✅ 底层方法转储完成，请复制日志！");
-            }
+            HWSLog(@"====== 全宇宙搜索完成 ======\n\n");
         });
 
+        // 还原回最初的逻辑，为了测试先放任劫持，只记录堆栈
         return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
     }
     return %orig;
