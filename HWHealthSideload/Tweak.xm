@@ -422,10 +422,27 @@ static NSString *dumpTargetClasses() {
             if (g_intercept) {
                 // 清空之前的日志以便新一轮监控
                 if (g_logs) [g_logs removeAllObjects];
+
+                // 注入运行时对象探测
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+                    NSArray *targets = @[@"SHWatchAppStoreManager", @"APAppInstallationManager", @"HWDSidebandManager", @"HWDDevice", @"SHHapVersionRequest", @"BMAppInstallManager"];
+                    for (NSString *clsName in targets) {
+                        Class cls = NSClassFromString(clsName);
+                        if (cls) {
+                            HWSLog([NSString stringWithFormat:@"\n=== [%@] ===", clsName]);
+                            unsigned int count = 0;
+                            Method *methods = class_copyMethodList(cls, &count);
+                            for (unsigned int i = 0; i < count; i++) {
+                                HWSLog([NSString stringWithFormat:@"- %@", NSStringFromSelector(method_getName(methods[i]))]);
+                            }
+                            free(methods);
+                        }
+                    }
+                });
             }
             
             NSString *msg = g_intercept
-                ? @"劫持已开启。\n前往手表应用市场安装任意应用，\n您的 HAP 文件将被系统替换发送至手表。"
+                ? @"劫持已开启。\n前去下载应用，我们会抓取底层方法的列表！"
                 : @"劫持已关闭。";
             [self alert:@"状态" msg:msg];
         }]];
