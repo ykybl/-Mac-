@@ -125,6 +125,45 @@ static int my_SecCodeCopySelf(unsigned int flags, void **self_p) {
     return %orig;
 }
 
+- (BOOL)moveItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
+    if (g_intercept && g_hapPath &&
+        [[srcU pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
+        ![srcU.path isEqualToString:g_hapPath]) {
+        NSLog(@"[HWSideload] INTERCEPT moveItemAtURL: %@ -> %@", srcU.path, g_hapPath);
+        [self removeItemAtURL:dstU error:nil];
+        return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
+    }
+    return %orig;
+}
+
+%end
+
+%hook NSData
+
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+    if (g_intercept && g_hapPath &&
+        [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
+        ![path isEqualToString:g_hapPath]) {
+        NSLog(@"[HWSideload] INTERCEPT NSData writeToFile: %@", path);
+        NSFileManager *fm = [NSFileManager defaultManager];
+        [fm removeItemAtPath:path error:nil];
+        return [fm copyItemAtPath:g_hapPath toPath:path error:nil];
+    }
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+    if (g_intercept && g_hapPath &&
+        [[url pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
+        ![url.path isEqualToString:g_hapPath]) {
+        NSLog(@"[HWSideload] INTERCEPT NSData writeToURL: %@", url.path);
+        NSFileManager *fm = [NSFileManager defaultManager];
+        [fm removeItemAtURL:url error:nil];
+        return [fm copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:url error:nil];
+    }
+    return %orig;
+}
+
 %end
 
 // ============================================================================
@@ -179,7 +218,7 @@ static NSString *searchClasses(NSArray *keywords) {
     self.btn = [UIButton buttonWithType:UIButtonTypeSystem];
     self.btn.frame = CGRectMake(sw - 135, sh - 160, 120, 50);
     self.btn.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
-    [self.btn setTitle:@"HAP" forState:UIControlStateNormal];
+    [self.btn setTitle:@"侧载" forState:UIControlStateNormal];
     self.btn.titleLabel.font = [UIFont boldSystemFontOfSize:15];
     [self.btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     self.btn.layer.cornerRadius = 25;
@@ -211,46 +250,46 @@ static NSString *searchClasses(NSArray *keywords) {
 
 - (void)menu {
     NSString *st = g_hapPath
-        ? [NSString stringWithFormat:@"File: %@\nIntercept: %@",
-           [g_hapPath lastPathComponent], g_intercept ? @"ON" : @"OFF"]
-        : @"No file selected";
+        ? [NSString stringWithFormat:@"文件: %@\n劫持: %@",
+           [g_hapPath lastPathComponent], g_intercept ? @"已开启" : @"已关闭"]
+        : @"未选择文件";
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP Sideload"
+        alertControllerWithTitle:@"HAP 侧载"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
-    [m addAction:[UIAlertAction actionWithTitle:@"Select .hap file"
+    [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
         style:UIAlertActionStyleDefault handler:^(id a) {
         [self pickFile];
     }]];
 
     if (g_hapPath) {
-        NSString *title = g_intercept ? @"Turn OFF intercept" : @"Turn ON intercept";
+        NSString *title = g_intercept ? @"关闭劫持" : @"开启劫持";
         [m addAction:[UIAlertAction actionWithTitle:title
             style:UIAlertActionStyleDefault handler:^(id a) {
             g_intercept = !g_intercept;
-            [self.btn setTitle:(g_intercept ? @"ON" : @"HAP")
+            [self.btn setTitle:(g_intercept ? @"开启" : @"侧载")
                       forState:UIControlStateNormal];
             self.btn.backgroundColor = g_intercept
                 ? [UIColor colorWithRed:0.2 green:0.8 blue:0.3 alpha:0.95]
                 : [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
             NSString *msg = g_intercept
-                ? @"Intercept ON.\nGo to app market and install any watch app.\nYour HAP will be sent instead."
-                : @"Intercept OFF.";
-            [self alert:@"Status" msg:msg];
+                ? @"劫持已开启。\n前往手表应用市场安装任意应用，\n您的 HAP 文件将被系统替换发送至手表。"
+                : @"劫持已关闭。";
+            [self alert:@"状态" msg:msg];
         }]];
     }
 
-    [m addAction:[UIAlertAction actionWithTitle:@"Scan classes"
+    [m addAction:[UIAlertAction actionWithTitle:@"扫描下载类"
         style:UIAlertActionStyleDefault handler:^(id a) {
         NSString *r = searchClasses(@[@"Market", @"Install", @"Hap",
             @"Transfer", @"Download", @"AppStore"]);
         NSLog(@"[HWSideload]\n%@", r);
-        [self alert:@"Scan result" msg:r];
+        [self alert:@"扫描结果" msg:r];
     }]];
 
-    [m addAction:[UIAlertAction actionWithTitle:@"Cancel"
+    [m addAction:[UIAlertAction actionWithTitle:@"取消"
         style:UIAlertActionStyleCancel handler:nil]];
 
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
@@ -289,24 +328,24 @@ static NSString *searchClasses(NSArray *keywords) {
         g_hapPath = [dst copy];
         NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
         unsigned long long sz = [at fileSize];
-        [self alert:@"Ready"
+        [self alert:@"准备就绪"
                msg:[NSString stringWithFormat:
                     @"%@ (%.1f MB)\n\n"
-                    @"Next:\n"
-                    @"1. Tap button > Turn ON intercept\n"
-                    @"2. Go to watch app market\n"
-                    @"3. Install any app\n"
-                    @"4. Watch receives YOUR file",
+                    @"下一步:\n"
+                    @"1. 点击侧载按钮 > 开启劫持\n"
+                    @"2. 进入手表应用市场\n"
+                    @"3. 安装任意应用\n"
+                    @"4. 手表将接收您的文件",
                     [dst lastPathComponent], sz/1048576.0]];
     } else {
-        [self alert:@"Error" msg:err.localizedDescription];
+        [self alert:@"错误" msg:err.localizedDescription];
     }
 }
 
 - (void)alert:(NSString *)t msg:(NSString *)m {
     UIAlertController *a = [UIAlertController alertControllerWithTitle:t
         message:m preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"OK"
+    [a addAction:[UIAlertAction actionWithTitle:@"确定"
         style:UIAlertActionStyleDefault handler:nil]];
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
     while (vc.presentedViewController) vc = vc.presentedViewController;
