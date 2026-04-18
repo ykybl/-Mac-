@@ -263,28 +263,6 @@ static BOOL isTargetExt(NSString *path) {
 
 %hook NSURLSession
 
-- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
-    NSString *u = request.URL.absoluteString;
-    if (g_intercept && g_hapPath && isTargetExt(u)) {
-        HWSLog(@"💥 替换下载请求为本地 HAP!");
-        NSMutableURLRequest *req = [request mutableCopy];
-        req.URL = [NSURL fileURLWithPath:g_hapPath];
-        g_intercept = NO;
-        return %orig(req);
-    }
-    return %orig;
-}
-
-- (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
-    NSString *u = url.absoluteString;
-    if (g_intercept && g_hapPath && isTargetExt(u)) {
-        HWSLog(@"💥 替换下载 URL 为本地 HAP!");
-        g_intercept = NO;
-        return %orig([NSURL fileURLWithPath:g_hapPath]);
-    }
-    return %orig;
-}
-
 %end
 
 // ============================================================================
