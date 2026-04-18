@@ -1,124 +1,96 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
-#import "fishhook.h"
-#import <sys/sysctl.h>
 #import <dlfcn.h>
-
-// ============================================================================
-//  HWHealthSideload v4.3
-//  Fix: TabBar disappear (narrow BundleID spoof scope) + Notification-based UI attach
-// ============================================================================
+#import <fishhook.h>
+#import <Security/Security.h>
 
 static NSString *g_hapPath = nil;
-static BOOL g_intercept = NO;
+static BOOL     g_intercept = NO;
 
 // ============================================================================
-// Part 1: Anti-Debug
+// Part 0: Log Collector
 // ============================================================================
 
-static int (*orig_ptrace)(int, pid_t, caddr_t, int);
-static int my_ptrace(int req, pid_t pid, caddr_t addr, int data) {
-    if (req == 31) return 0;
-    return orig_ptrace(req, pid, addr, data);
-}
-
-static int (*orig_sysctl)(int *, u_int, void *, size_t *, void *, size_t);
-static int my_sysctl(int *name, u_int namelen, void *info, size_t *infosize, void *newinfo, size_t newinfosize) {
-    int ret = orig_sysctl(name, namelen, info, infosize, newinfo, newinfosize);
-    if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC &&
-        name[2] == KERN_PROC_PID && info) {
-        struct kinfo_proc *p = (struct kinfo_proc *)info;
-        if (p->kp_proc.p_flag & P_TRACED)
-            p->kp_proc.p_flag &= ~P_TRACED;
-    }
-    return ret;
+static NSMutableArray *g_logs = nil;
+static void HWSLog(NSString *msg) {
+    if (!g_logs) g_logs = [NSMutableArray new];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSDateFormatter *df = [NSDateFormatter new];
+        [df setDateFormat:@"HH:mm:ss.SSS"];
+        NSString *ts = [df stringFromDate:[NSDate date]];
+        [g_logs addObject:[NSString stringWithFormat:@"[%@] %@", ts, msg]];
+        if (g_logs.count > 150) [g_logs removeObjectAtIndex:0];
+    });
 }
 
 // ============================================================================
-// Part 2: Bundle ID & Signature Bypass
+// Part 1: 环境检测绕过
+// ============================================================================
+
+typedef OSStatus (*SecCodeCheckValidity_func)(void *code, uint32_t flags, void *req);
+static SecCodeCheckValidity_func orig_SecCodeCheckValidity;
+static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
+    return 0; // errSecSuccess
+}
+
+typedef OSStatus (*SecCodeCopySelf_func)(uint32_t flags, void **selfCode);
+static SecCodeCopySelf_func orig_SecCodeCopySelf;
+static OSStatus my_SecCodeCopySelf(uint32_t flags, void **selfCode) {
+    OSStatus r = orig_SecCodeCopySelf(flags, selfCode);
+    return 0; // errSecSuccess
+}
+
+// ============================================================================
+// Part 2: Bundle ID 伪装
 // ============================================================================
 
 %hook NSBundle
 
 - (NSString *)bundleIdentifier {
-    if ([self isEqual:[NSBundle mainBundle]]) {
+    NSString *orig = %orig;
+    if (g_intercept && ([orig containsString:@"huawei"] || [orig containsString:@"health"])) {
+        void *r = __builtin_return_address(0);
         Dl_info info;
-        if (dladdr(__builtin_return_address(0), &info) && info.dli_fname) {
-            if (strstr(info.dli_fname, "/System/Library/") == NULL && 
-                strstr(info.dli_fname, "/usr/lib/") == NULL) {
+        if (dladdr(r, &info)) {
+            NSString *img = [NSString stringWithUTF8String:info.dli_fname];
+            if ([img containsString:@"HuaweiHealth"]) {
                 return @"com.huawei.iossporthealth";
             }
         }
     }
-    return %orig;
+    return orig;
 }
 
-- (id)objectForInfoDictionaryKey:(NSString *)key {
-    if ([self isEqual:[NSBundle mainBundle]] && [key isEqualToString:@"CFBundleIdentifier"]) {
-        Dl_info info;
-        if (dladdr(__builtin_return_address(0), &info) && info.dli_fname) {
-            if (strstr(info.dli_fname, "/System/Library/") == NULL && 
-                strstr(info.dli_fname, "/usr/lib/") == NULL) {
-                return @"com.huawei.iossporthealth";
-            }
-        }
-    }
-    return %orig;
-}
 %end
 
 // ============================================================================
-// Part 2b: Runtime hook for SecCodeCheckValidity (via fishhook)
-//          iOS SDK has no SecCodeRef headers, use opaque function pointers
-// ============================================================================
-
-typedef int (*SecCodeCheckValidity_t)(void *code, unsigned int flags, void *requirement);
-typedef int (*SecCodeCopySelf_t)(unsigned int flags, void **self_p);
-
-static SecCodeCheckValidity_t orig_SecCodeCheckValidity = NULL;
-static int my_SecCodeCheckValidity(void *code, unsigned int flags, void *requirement) {
-    return 0; // errSecSuccess
-}
-
-static SecCodeCopySelf_t orig_SecCodeCopySelf = NULL;
-static int my_SecCodeCopySelf(unsigned int flags, void **self_p) {
-    if (orig_SecCodeCopySelf) orig_SecCodeCopySelf(flags, self_p);
-    return 0; // errSecSuccess
-}
-
-
-// ============================================================================
-// Part 3: NSFileManager 拦截
+// Part 3: NSFileManager & NSData & NSURLSession 拦截
 // ============================================================================
 
 %hook NSFileManager
 
 - (BOOL)copyItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
-    if (g_intercept && g_hapPath &&
-        [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
-        ![src isEqualToString:g_hapPath]) {
-        NSLog(@"[HWSideload] INTERCEPT copyItemAtPath: %@ -> %@", src, g_hapPath);
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![src isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 copyItemAtPath!");
         return %orig(g_hapPath, dst, err);
     }
     return %orig;
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
-    if (g_intercept && g_hapPath &&
-        [[srcU pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
-        ![srcU.path isEqualToString:g_hapPath]) {
-        NSLog(@"[HWSideload] INTERCEPT copyItemAtURL: %@ -> %@", srcU.path, g_hapPath);
-        NSURL *u = [NSURL fileURLWithPath:g_hapPath];
-        return %orig(u, dstU, err);
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[srcU.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![srcU.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 copyItemAtURL!");
+        return %orig([NSURL fileURLWithPath:g_hapPath], dstU, err);
     }
     return %orig;
 }
 
 - (BOOL)moveItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
-    if (g_intercept && g_hapPath &&
-        [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
-        ![src isEqualToString:g_hapPath]) {
-        NSLog(@"[HWSideload] INTERCEPT moveItemAtPath: %@ -> %@", src, g_hapPath);
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![src isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 moveItemAtPath!");
         [self removeItemAtPath:dst error:nil];
         return [self copyItemAtPath:g_hapPath toPath:dst error:err];
     }
@@ -126,10 +98,9 @@ static int my_SecCodeCopySelf(unsigned int flags, void **self_p) {
 }
 
 - (BOOL)moveItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
-    if (g_intercept && g_hapPath &&
-        [[srcU pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
-        ![srcU.path isEqualToString:g_hapPath]) {
-        NSLog(@"[HWSideload] INTERCEPT moveItemAtURL: %@ -> %@", srcU.path, g_hapPath);
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[srcU.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![srcU.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 moveItemAtURL!");
         [self removeItemAtURL:dstU error:nil];
         return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
     }
@@ -141,10 +112,9 @@ static int my_SecCodeCopySelf(unsigned int flags, void **self_p) {
 %hook NSData
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if (g_intercept && g_hapPath &&
-        [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
-        ![path isEqualToString:g_hapPath]) {
-        NSLog(@"[HWSideload] INTERCEPT NSData writeToFile: %@", path);
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteFile: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSData writeToFile!");
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtPath:path error:nil];
         return [fm copyItemAtPath:g_hapPath toPath:path error:nil];
@@ -153,13 +123,80 @@ static int my_SecCodeCopySelf(unsigned int flags, void **self_p) {
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if (g_intercept && g_hapPath &&
-        [[url pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame &&
-        ![url.path isEqualToString:g_hapPath]) {
-        NSLog(@"[HWSideload] INTERCEPT NSData writeToURL: %@", url.path);
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteURL: %@", url.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[url.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![url.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSData writeToURL!");
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtURL:url error:nil];
         return [fm copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:url error:nil];
+    }
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadFile: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Data ReadFile!");
+        return %orig(g_hapPath);
+    }
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadURL: %@", url.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[url.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![url.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Data ReadURL!");
+        return %orig([NSURL fileURLWithPath:g_hapPath]);
+    }
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadFile: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Init ReadFile!");
+        return %orig(g_hapPath, readOptionsMask, errorPtr);
+    }
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadURL: %@", url.lastPathComponent]); }
+    if (g_intercept && g_hapPath && [[url.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![url.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Init ReadURL!");
+        return %orig([NSURL fileURLWithPath:g_hapPath], readOptionsMask, errorPtr);
+    }
+    return %orig;
+}
+
+%end
+
+%hook NSURLSession
+
+- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
+    if (g_intercept) {
+        NSString *u = request.URL.absoluteString;
+        HWSLog([NSString stringWithFormat:@"NET Req: %@", request.URL.lastPathComponent]);
+        
+        if (g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
+            HWSLog(@"💥 自动替换网络请求 (Request)为本地 HAP!");
+            NSMutableURLRequest *newReq = [request mutableCopy];
+            newReq.URL = [NSURL fileURLWithPath:g_hapPath];
+            return %orig(newReq);
+        }
+    }
+    return %orig;
+}
+
+- (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
+    if (g_intercept) {
+        NSString *u = url.absoluteString;
+        HWSLog([NSString stringWithFormat:@"NET URL: %@", url.lastPathComponent]);
+        
+        if (g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
+            HWSLog(@"💥 自动替换网络请求 (URL)为本地 HAP!");
+            return %orig([NSURL fileURLWithPath:g_hapPath]);
+        }
     }
     return %orig;
 }
@@ -316,6 +353,12 @@ static NSString *dumpTargetClasses() {
             self.btn.backgroundColor = g_intercept
                 ? [UIColor colorWithRed:0.2 green:0.8 blue:0.3 alpha:0.95]
                 : [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
+            
+            if (g_intercept) {
+                // 清空之前的日志以便新一轮监控
+                if (g_logs) [g_logs removeAllObjects];
+            }
+            
             NSString *msg = g_intercept
                 ? @"劫持已开启。\n前往手表应用市场安装任意应用，\n您的 HAP 文件将被系统替换发送至手表。"
                 : @"劫持已关闭。";
@@ -323,20 +366,12 @@ static NSString *dumpTargetClasses() {
         }]];
     }
 
-    [m addAction:[UIAlertAction actionWithTitle:@"扫描下载类"
+    [m addAction:[UIAlertAction actionWithTitle:@"查看底层监控日志"
         style:UIAlertActionStyleDefault handler:^(id a) {
-        NSString *r = searchClasses(@[@"Market", @"Install", @"Hap",
-            @"Transfer", @"Download", @"AppStore"]);
-        NSLog(@"[HWSideload]\n%@", r);
-        [self alert:@"扫描结果" msg:r];
-    }]];
-
-    [m addAction:[UIAlertAction actionWithTitle:@"提取核心传输方法 (复制到剪贴板)"
-        style:UIAlertActionStyleDefault handler:^(id a) {
-        NSString *r = dumpTargetClasses();
+        NSString *logStr = (g_logs && g_logs.count > 0) ? [g_logs componentsJoinedByString:@"\n"] : @"暂无监控日志。请先[开启劫持]并去市场安装。";
         UIPasteboard *pb = [UIPasteboard generalPasteboard];
-        [pb setString:r];
-        [self alert:@"已复制" msg:[NSString stringWithFormat:@"共提取 %lu 字符，请去微信或备忘录粘贴并发送给 AI 分析。", (unsigned long)r.length]];
+        [pb setString:logStr];
+        [self alert:@"日志已复制" msg:[NSString stringWithFormat:@"已抓取 %lu 条文件/网络行为监控记录，已复制到剪贴板！去黏贴发给 AI 分析看后缀是啥！", (unsigned long)g_logs.count]];
     }]];
 
     [m addAction:[UIAlertAction actionWithTitle:@"取消"
@@ -408,35 +443,31 @@ static NSString *dumpTargetClasses() {
 // Part 6: Window Hook & Setup
 // ============================================================================
 
-static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UIWindow *w = [UIApplication sharedApplication].delegate.window;
-            if (!w) w = [UIApplication sharedApplication].keyWindow;
-            if (w) [[HWSideloadUI shared] attach:w];
-        });
-    });
+%hook UIWindow
+- (void)makeKeyAndVisible {
+    %orig;
 }
+%end
 
-// ============================================================================
-// Part 7: Constructor
-// ============================================================================
+static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    UIWindow *k = [UIApplication sharedApplication].keyWindow;
+    if (k) [[HWSideloadUI shared] attach:k];
+}
 
 %ctor {
-    NSLog(@"[HWSideload] v4.3 loaded");
-    struct rebinding h[] = {
-        {"ptrace",               (void *)my_ptrace,               (void **)&orig_ptrace},
-        {"sysctl",               (void *)my_sysctl,               (void **)&orig_sysctl},
-        {"SecCodeCheckValidity", (void *)my_SecCodeCheckValidity,  (void **)&orig_SecCodeCheckValidity},
-        {"SecCodeCopySelf",      (void *)my_SecCodeCopySelf,       (void **)&orig_SecCodeCopySelf},
-    };
-    rebind_symbols(h, 4);
-    
-    CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
-                                    appDidBecomeActive,
-                                    (CFStringRef)UIApplicationDidBecomeActiveNotification,
-                                    NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[HWSideload] hooks active");
-}
+    dispatch_async(dispatch_get_main_queue(), ^{
+        struct rebindings_entry rb[2];
+        rb[0].name = "SecCodeCheckValidity";
+        rb[0].replacement = (void *)my_SecCodeCheckValidity;
+        rb[0].replaced = (void **)&orig_SecCodeCheckValidity;
 
+        rb[1].name = "SecCodeCopySelf";
+        rb[1].replacement = (void *)my_SecCodeCopySelf;
+        rb[1].replaced = (void **)&orig_SecCodeCopySelf;
+
+        rebind_symbols((struct rebinding *)rb, 2);
+
+        CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
+            appDidBecomeActive, (CFStringRef)UIApplicationDidBecomeActiveNotification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    });
+}
