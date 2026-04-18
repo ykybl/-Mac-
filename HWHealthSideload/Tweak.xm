@@ -191,6 +191,48 @@ static NSString *searchClasses(NSArray *keywords) {
     return r;
 }
 
+static NSString *dumpTargetClasses() {
+    NSArray *targets = @[
+        @"HuaweiWear.SHWatchAppStoreManager", 
+        @"SHSports.SHNDownloader", 
+        @"HuaweiWear.SHHapVersionRequest", 
+        @"WatchFaceSDK.WFTrialThemesInstallObserver", 
+        @"HuaweiWear.SHWatchAppStoreSetModel",
+        @"AppProtection.APAppInstallationManager",
+        @"SHSports.RoadNetworkGaoDeDownloader"
+    ];
+    NSMutableString *r = [NSMutableString string];
+    int n = objc_getClassList(NULL, 0);
+    Class *classes = (Class *)malloc(sizeof(Class) * n);
+    objc_getClassList(classes, n);
+    for (int i = 0; i < n; i++) {
+        NSString *name = NSStringFromClass(classes[i]);
+        for (NSString *t in targets) {
+            if ([name isEqualToString:t] || [name hasSuffix:t]) {
+                Class cls = classes[i];
+                [r appendFormat:@"\n=== [%@] ===\n", name];
+                
+                // Instance methods
+                unsigned int count;
+                Method *methods = class_copyMethodList(cls, &count);
+                for (int m = 0; m < count; m++) {
+                    [r appendFormat:@"- %@\n", NSStringFromSelector(method_getName(methods[m]))];
+                }
+                free(methods);
+                
+                // Class methods
+                Method *classMethods = class_copyMethodList(object_getClass((id)cls), &count);
+                for (int m = 0; m < count; m++) {
+                    [r appendFormat:@"+ %@\n", NSStringFromSelector(method_getName(classMethods[m]))];
+                }
+                free(classMethods);
+            }
+        }
+    }
+    free(classes);
+    return (r.length > 0) ? r : @"未找到目标类";
+}
+
 // ============================================================================
 // Part 5: UI
 // ============================================================================
@@ -287,6 +329,14 @@ static NSString *searchClasses(NSArray *keywords) {
             @"Transfer", @"Download", @"AppStore"]);
         NSLog(@"[HWSideload]\n%@", r);
         [self alert:@"扫描结果" msg:r];
+    }]];
+
+    [m addAction:[UIAlertAction actionWithTitle:@"提取核心传输方法 (复制到剪贴板)"
+        style:UIAlertActionStyleDefault handler:^(id a) {
+        NSString *r = dumpTargetClasses();
+        UIPasteboard *pb = [UIPasteboard generalPasteboard];
+        [pb setString:r];
+        [self alert:@"已复制" msg:[NSString stringWithFormat:@"共提取 %lu 字符，请去微信或备忘录粘贴并发送给 AI 分析。", (unsigned long)r.length]];
     }]];
 
     [m addAction:[UIAlertAction actionWithTitle:@"取消"
