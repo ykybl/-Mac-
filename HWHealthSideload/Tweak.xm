@@ -36,7 +36,7 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
 typedef OSStatus (*SecCodeCopySelf_func)(uint32_t flags, void **selfCode);
 static SecCodeCopySelf_func orig_SecCodeCopySelf;
 static OSStatus my_SecCodeCopySelf(uint32_t flags, void **selfCode) {
-    OSStatus r = orig_SecCodeCopySelf(flags, selfCode);
+    orig_SecCodeCopySelf(flags, selfCode);
     return 0; // errSecSuccess
 }
 
@@ -456,7 +456,7 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 
 %ctor {
     dispatch_async(dispatch_get_main_queue(), ^{
-        struct rebindings_entry rb[2];
+        struct rebinding rb[2];
         rb[0].name = "SecCodeCheckValidity";
         rb[0].replacement = (void *)my_SecCodeCheckValidity;
         rb[0].replaced = (void **)&orig_SecCodeCheckValidity;
