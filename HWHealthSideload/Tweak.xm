@@ -22,7 +22,7 @@ static void HWSLog(NSString *msg) {
         [df setDateFormat:@"HH:mm:ss.SSS"];
         NSString *ts = [df stringFromDate:[NSDate date]];
         [g_logs addObject:[NSString stringWithFormat:@"[%@] %@", ts, msg]];
-        if (g_logs.count > 150) [g_logs removeObjectAtIndex:0];
+        if (g_logs.count > 5000) [g_logs removeObjectAtIndex:0];
     });
 }
 
@@ -237,8 +237,9 @@ static BOOL isTargetExt(NSString *path) {
             HWSLog(@"====== 全宇宙搜索完成 ======\n\n");
         });
 
-        // 还原回最初的逻辑，为了测试先放任劫持，只记录堆栈
-        return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
+        // 放行原始文件，让它原本合法的 .bin 成功通过 DRM 解密，
+        // 从而完整跑向下游蓝牙传输逻辑，我们只为了用全宇宙扫描抓出接口名！
+        return %orig;
     }
     return %orig;
 }
@@ -273,8 +274,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadFile: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadFile!");
-        // 打印堆栈来寻找是谁在读这个文件做校验
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath);
     }
     return %orig;
@@ -284,7 +283,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadURL: %@", url.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadURL!");
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig([NSURL fileURLWithPath:g_hapPath]);
     }
     return %orig;
@@ -294,7 +292,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadFile: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Init ReadFile!");
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath, readOptionsMask, errorPtr);
     }
     return %orig;
@@ -304,7 +301,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadURL: %@", url.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Init ReadURL!");
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig([NSURL fileURLWithPath:g_hapPath], readOptionsMask, errorPtr);
     }
     return %orig;
@@ -317,7 +313,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"FH Read: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSFileHandle!");
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath);
     }
     return %orig;
@@ -329,7 +324,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Read: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSInputStream!");
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath);
     }
     return %orig;
@@ -338,7 +332,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Init: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSInputStream init!");
-        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath);
     }
     return %orig;
