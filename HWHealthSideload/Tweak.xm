@@ -4,6 +4,9 @@
 #import <fishhook.h>
 #import <Security/Security.h>
 
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunused-variable"
+
 static NSString *g_hapPath = nil;
 static BOOL     g_intercept = NO;
 
