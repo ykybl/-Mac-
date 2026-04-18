@@ -50,18 +50,39 @@ static OSStatus my_SecCodeCopySelf(uint32_t flags, void **selfCode) {
 %hook NSBundle
 
 - (NSString *)bundleIdentifier {
+    if (self == [NSBundle mainBundle]) {
+        return @"com.huawei.iossporthealth";
+    }
+    
     NSString *orig = %orig;
-    if ([orig containsString:@"huawei"] || [orig containsString:@"health"] || [orig containsString:@"HWHealthSideload"]) {
-        void *r = __builtin_return_address(0);
-        Dl_info info;
-        if (dladdr(r, &info)) {
-            NSString *img = [NSString stringWithUTF8String:info.dli_fname];
-            if ([img containsString:@"HuaweiHealth"]) {
-                return @"com.huawei.iossporthealth";
-            }
+    if (!orig) return nil;
+
+    void *r = __builtin_return_address(0);
+    Dl_info info;
+    if (dladdr(r, &info) && info.dli_fname) {
+        NSString *img = [NSString stringWithUTF8String:info.dli_fname];
+        if ([img containsString:@"HuaweiHealth"]) {
+            return @"com.huawei.iossporthealth";
         }
     }
     return orig;
+}
+
+- (NSDictionary *)infoDictionary {
+    NSDictionary *orig = %orig;
+    if (self == [NSBundle mainBundle] && orig) {
+        NSMutableDictionary *dict = [orig mutableCopy];
+        dict[@"CFBundleIdentifier"] = @"com.huawei.iossporthealth";
+        return dict;
+    }
+    return orig;
+}
+
+- (id)objectForInfoDictionaryKey:(NSString *)key {
+    if (self == [NSBundle mainBundle] && [key isEqualToString:@"CFBundleIdentifier"]) {
+        return @"com.huawei.iossporthealth";
+    }
+    return %orig;
 }
 
 %end
