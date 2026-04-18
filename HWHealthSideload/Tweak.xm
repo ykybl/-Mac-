@@ -142,15 +142,22 @@ static NSString *sanitizeString(NSString *str) {
 %end
 
 // ============================================================================
-// Part 3: NSFileManager & NSData & NSURLSession 拦截
+// Part 3: NSFileManager & NSData & NSURLSession 拦截 (侧载核心逻辑)
 // ============================================================================
+
+static BOOL isTargetExt(NSString *path) {
+    if (!path) return NO;
+    NSString *low = path.lowercaseString;
+    return [low containsString:@".hap"] || [low containsString:@".pkg"] || [low containsString:@".bin"];
+}
 
 %hook NSFileManager
 
 - (BOOL)copyItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![src isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(dst) && ![dst isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 copyItemAtPath!");
+        g_intercept = NO; // 拦截成功一次后关闭
         return %orig(g_hapPath, dst, err);
     }
     return %orig;
@@ -158,8 +165,9 @@ static NSString *sanitizeString(NSString *str) {
 
 - (BOOL)copyItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[srcU.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![srcU.path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 copyItemAtURL!");
+        g_intercept = NO;
         return %orig([NSURL fileURLWithPath:g_hapPath], dstU, err);
     }
     return %orig;
@@ -167,9 +175,10 @@ static NSString *sanitizeString(NSString *str) {
 
 - (BOOL)moveItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[src pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![src isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(dst) && ![dst isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 moveItemAtPath!");
         [self removeItemAtPath:dst error:nil];
+        g_intercept = NO;
         return [self copyItemAtPath:g_hapPath toPath:dst error:err];
     }
     return %orig;
@@ -177,9 +186,10 @@ static NSString *sanitizeString(NSString *str) {
 
 - (BOOL)moveItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[srcU.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![srcU.path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 moveItemAtURL!");
         [self removeItemAtURL:dstU error:nil];
+        g_intercept = NO;
         return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
     }
     return %orig;
@@ -191,10 +201,11 @@ static NSString *sanitizeString(NSString *str) {
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteFile: %@", path.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSData writeToFile!");
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtPath:path error:nil];
+        g_intercept = NO;
         return [fm copyItemAtPath:g_hapPath toPath:path error:nil];
     }
     return %orig;
@@ -202,10 +213,11 @@ static NSString *sanitizeString(NSString *str) {
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteURL: %@", url.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[url.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![url.path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSData writeToURL!");
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtURL:url error:nil];
+        g_intercept = NO;
         return [fm copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:url error:nil];
     }
     return %orig;
@@ -213,7 +225,7 @@ static NSString *sanitizeString(NSString *str) {
 
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadFile: %@", path.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadFile!");
         return %orig(g_hapPath);
     }
@@ -222,7 +234,7 @@ static NSString *sanitizeString(NSString *str) {
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadURL: %@", url.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[url.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![url.path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadURL!");
         return %orig([NSURL fileURLWithPath:g_hapPath]);
     }
@@ -231,7 +243,7 @@ static NSString *sanitizeString(NSString *str) {
 
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadFile: %@", path.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Init ReadFile!");
         return %orig(g_hapPath, readOptionsMask, errorPtr);
     }
@@ -240,7 +252,7 @@ static NSString *sanitizeString(NSString *str) {
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadURL: %@", url.lastPathComponent]); }
-    if (g_intercept && g_hapPath && [[url.path pathExtension] caseInsensitiveCompare:@"hap"] == NSOrderedSame && ![url.path isEqualToString:g_hapPath]) {
+    if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Init ReadURL!");
         return %orig([NSURL fileURLWithPath:g_hapPath], readOptionsMask, errorPtr);
     }
@@ -253,10 +265,11 @@ static NSString *sanitizeString(NSString *str) {
 
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
     NSString *u = request.URL.absoluteString;
-    if (g_intercept && g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
+    if (g_intercept && g_hapPath && isTargetExt(u)) {
         HWSLog(@"💥 替换下载请求为本地 HAP!");
         NSMutableURLRequest *req = [request mutableCopy];
         req.URL = [NSURL fileURLWithPath:g_hapPath];
+        g_intercept = NO;
         return %orig(req);
     }
     return %orig;
@@ -264,8 +277,9 @@ static NSString *sanitizeString(NSString *str) {
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
     NSString *u = url.absoluteString;
-    if (g_intercept && g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
+    if (g_intercept && g_hapPath && isTargetExt(u)) {
         HWSLog(@"💥 替换下载 URL 为本地 HAP!");
+        g_intercept = NO;
         return %orig([NSURL fileURLWithPath:g_hapPath]);
     }
     return %orig;
