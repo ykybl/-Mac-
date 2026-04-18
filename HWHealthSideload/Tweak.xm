@@ -2,12 +2,11 @@
 #import <objc/runtime.h>
 #import "fishhook.h"
 #import <sys/sysctl.h>
-#import <Security/Security.h>
 #import <dlfcn.h>
 
 // ============================================================================
 //  HWHealthSideload v4.3
-//  修复: 底部导航栏消失 (缩小 BundleID 伪装范围), 引入签名防检测
+//  Fix: TabBar disappear (narrow BundleID spoof scope) + Notification-based UI attach
 // ============================================================================
 
 static NSString *g_hapPath = nil;
@@ -68,14 +67,25 @@ static int my_sysctl(int *name, u_int namelen, void *info, size_t *infosize, voi
 }
 %end
 
-%hookf(OSStatus, SecCodeCheckValidity, SecCodeRef code, SecCSFlags flags, SecRequirementRef requirement) {
-    return errSecSuccess;
+// ============================================================================
+// Part 2b: Runtime hook for SecCodeCheckValidity (via fishhook)
+//          iOS SDK has no SecCodeRef headers, use opaque function pointers
+// ============================================================================
+
+typedef int (*SecCodeCheckValidity_t)(void *code, unsigned int flags, void *requirement);
+typedef int (*SecCodeCopySelf_t)(unsigned int flags, void **self_p);
+
+static SecCodeCheckValidity_t orig_SecCodeCheckValidity = NULL;
+static int my_SecCodeCheckValidity(void *code, unsigned int flags, void *requirement) {
+    return 0; // errSecSuccess
 }
 
-%hookf(OSStatus, SecCodeCopySelf, SecCSFlags flags, SecCodeRef *self_p) {
-    OSStatus orig = %orig;
-    return errSecSuccess;
+static SecCodeCopySelf_t orig_SecCodeCopySelf = NULL;
+static int my_SecCodeCopySelf(unsigned int flags, void **self_p) {
+    if (orig_SecCodeCopySelf) orig_SecCodeCopySelf(flags, self_p);
+    return 0; // errSecSuccess
 }
+
 
 // ============================================================================
 // Part 3: NSFileManager 拦截
@@ -327,10 +337,12 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 %ctor {
     NSLog(@"[HWSideload] v4.3 loaded");
     struct rebinding h[] = {
-        {"ptrace", (void *)my_ptrace, (void **)&orig_ptrace},
-        {"sysctl", (void *)my_sysctl, (void **)&orig_sysctl},
+        {"ptrace",               (void *)my_ptrace,               (void **)&orig_ptrace},
+        {"sysctl",               (void *)my_sysctl,               (void **)&orig_sysctl},
+        {"SecCodeCheckValidity", (void *)my_SecCodeCheckValidity,  (void **)&orig_SecCodeCheckValidity},
+        {"SecCodeCopySelf",      (void *)my_SecCodeCopySelf,       (void **)&orig_SecCodeCopySelf},
     };
-    rebind_symbols(h, 2);
+    rebind_symbols(h, 4);
     
     CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
                                     appDidBecomeActive,
