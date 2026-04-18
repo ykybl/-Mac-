@@ -9,6 +9,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Theos
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
           
@@ -25,5 +27,5 @@ jobs:
       - name: Upload Dylib Output
         uses: actions/upload-artifact@v4
         with:
-          name: HWHealthSideload_v2_Dylib
+          name: HWHealthSideload_v4_Dylib
           path: OUTPUT_DYLIB/
