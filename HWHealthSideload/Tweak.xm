@@ -157,8 +157,8 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(dst) && ![dst isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 copyItemAtPath!");
-        g_intercept = NO; // 拦截成功一次后关闭
-        return %orig(g_hapPath, dst, err);
+        BOOL res = %orig(g_hapPath, dst, err);
+        return res;
     }
     return %orig;
 }
@@ -167,8 +167,8 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 copyItemAtURL!");
-        g_intercept = NO;
-        return %orig([NSURL fileURLWithPath:g_hapPath], dstU, err);
+        BOOL res = %orig([NSURL fileURLWithPath:g_hapPath], dstU, err);
+        return res;
     }
     return %orig;
 }
@@ -178,8 +178,8 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept && g_hapPath && isTargetExt(dst) && ![dst isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 moveItemAtPath!");
         [self removeItemAtPath:dst error:nil];
-        g_intercept = NO;
-        return [self copyItemAtPath:g_hapPath toPath:dst error:err];
+        BOOL res = [self copyItemAtPath:g_hapPath toPath:dst error:err];
+        return res;
     }
     return %orig;
 }
@@ -189,7 +189,6 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept && g_hapPath && isTargetExt(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 moveItemAtURL!");
         [self removeItemAtURL:dstU error:nil];
-        g_intercept = NO;
         
         // 当我们截获真实下载时，由于用户肯定在商店页面，所以类肯定加载了。
         // 这里立即抓取底层类的方法列表！扫描全部类以支持 Swift 命名空间 (如 HuaweiWear.SHWatchAppStoreManager)
@@ -247,7 +246,6 @@ static BOOL isTargetExt(NSString *path) {
         HWSLog(@"💥 劫持 NSData writeToFile!");
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtPath:path error:nil];
-        g_intercept = NO;
         return [fm copyItemAtPath:g_hapPath toPath:path error:nil];
     }
     return %orig;
@@ -259,7 +257,6 @@ static BOOL isTargetExt(NSString *path) {
         HWSLog(@"💥 劫持 NSData writeToURL!");
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtURL:url error:nil];
-        g_intercept = NO;
         return [fm copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:url error:nil];
     }
     return %orig;
@@ -269,6 +266,8 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadFile: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadFile!");
+        // 打印堆栈来寻找是谁在读这个文件做校验
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath);
     }
     return %orig;
@@ -278,6 +277,7 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadURL: %@", url.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadURL!");
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig([NSURL fileURLWithPath:g_hapPath]);
     }
     return %orig;
@@ -287,6 +287,7 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadFile: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Init ReadFile!");
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig(g_hapPath, readOptionsMask, errorPtr);
     }
     return %orig;
@@ -296,7 +297,42 @@ static BOOL isTargetExt(NSString *path) {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadURL: %@", url.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Init ReadURL!");
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
         return %orig([NSURL fileURLWithPath:g_hapPath], readOptionsMask, errorPtr);
+    }
+    return %orig;
+}
+
+%end
+
+%hook NSFileHandle
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"FH Read: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSFileHandle!");
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
+        return %orig(g_hapPath);
+    }
+    return %orig;
+}
+%end
+
+%hook NSInputStream
++ (nullable instancetype)inputStreamWithFileAtPath:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Read: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSInputStream!");
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
+        return %orig(g_hapPath);
+    }
+    return %orig;
+}
+- (nullable instancetype)initWithFileAtPath:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Init: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSInputStream init!");
+        HWSLog([NSString stringWithFormat:@"Stack: %@", [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]);
+        return %orig(g_hapPath);
     }
     return %orig;
 }
