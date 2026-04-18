@@ -36,13 +36,6 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
     return 0; // errSecSuccess
 }
 
-typedef OSStatus (*SecCodeCopySelf_func)(uint32_t flags, void **selfCode);
-static SecCodeCopySelf_func orig_SecCodeCopySelf;
-static OSStatus my_SecCodeCopySelf(uint32_t flags, void **selfCode) {
-    orig_SecCodeCopySelf(flags, selfCode);
-    return 0; // errSecSuccess
-}
-
 // ============================================================================
 // Part 2: Bundle ID 伪装
 // ============================================================================
@@ -50,37 +43,32 @@ static OSStatus my_SecCodeCopySelf(uint32_t flags, void **selfCode) {
 %hook NSBundle
 
 - (NSString *)bundleIdentifier {
-    if (self == [NSBundle mainBundle]) {
-        return @"com.huawei.iossporthealth";
-    }
-    
-    NSString *orig = %orig;
-    if (!orig) return nil;
-
     void *r = __builtin_return_address(0);
     Dl_info info;
     if (dladdr(r, &info) && info.dli_fname) {
-        NSString *img = [NSString stringWithUTF8String:info.dli_fname];
-        if ([img containsString:@"HuaweiHealth"]) {
+        const char *fname = info.dli_fname;
+        // 如果调用者来自于主程序或特定的 Huawei 库，直接伪装
+        if (strstr(fname, "HuaweiHealth") || strstr(fname, "HuaweiWear")) {
             return @"com.huawei.iossporthealth";
         }
     }
-    return orig;
-}
 
-- (NSDictionary *)infoDictionary {
-    NSDictionary *orig = %orig;
-    if (self == [NSBundle mainBundle] && orig) {
-        NSMutableDictionary *dict = [orig mutableCopy];
-        dict[@"CFBundleIdentifier"] = @"com.huawei.iossporthealth";
-        return dict;
+    NSString *orig = %orig;
+    if (orig && ([orig containsString:@"huawei"] || [orig containsString:@"health"])) {
+        return @"com.huawei.iossporthealth";
     }
     return orig;
 }
 
 - (id)objectForInfoDictionaryKey:(NSString *)key {
-    if (self == [NSBundle mainBundle] && [key isEqualToString:@"CFBundleIdentifier"]) {
-        return @"com.huawei.iossporthealth";
+    if ([key isEqualToString:@"CFBundleIdentifier"]) {
+        void *r = __builtin_return_address(0);
+        Dl_info info;
+        if (dladdr(r, &info) && info.dli_fname) {
+            if (strstr(info.dli_fname, "HuaweiHealth") || strstr(info.dli_fname, "HuaweiWear")) {
+                return @"com.huawei.iossporthealth";
+            }
+        }
     }
     return %orig;
 }
@@ -480,16 +468,12 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 
 %ctor {
     dispatch_async(dispatch_get_main_queue(), ^{
-        struct rebinding rb[2];
+        struct rebinding rb[1];
         rb[0].name = "SecCodeCheckValidity";
         rb[0].replacement = (void *)my_SecCodeCheckValidity;
         rb[0].replaced = (void **)&orig_SecCodeCheckValidity;
 
-        rb[1].name = "SecCodeCopySelf";
-        rb[1].replacement = (void *)my_SecCodeCopySelf;
-        rb[1].replaced = (void **)&orig_SecCodeCopySelf;
-
-        rebind_symbols((struct rebinding *)rb, 2);
+        rebind_symbols((struct rebinding *)rb, 1);
 
         CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
             appDidBecomeActive, (CFStringRef)UIApplicationDidBecomeActiveNotification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
