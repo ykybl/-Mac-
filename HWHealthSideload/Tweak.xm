@@ -190,6 +190,27 @@ static BOOL isTargetExt(NSString *path) {
         HWSLog(@"💥 劫持 moveItemAtURL!");
         [self removeItemAtURL:dstU error:nil];
         g_intercept = NO;
+        
+        // 当我们截获真实下载时，由于用户肯定在商店页面，所以类肯定加载了。
+        // 这里立即抓取底层类的方法列表！
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+            NSArray *targets = @[@"SHWatchAppStoreManager", @"APAppInstallationManager", @"HWDSidebandManager", @"HWDDevice", @"SHHapVersionRequest", @"BMAppInstallManager", @"HWWearablePkgInstallation"];
+            for (NSString *clsName in targets) {
+                Class cls = NSClassFromString(clsName);
+                if (cls) {
+                    HWSLog([NSString stringWithFormat:@"\n=== [%@] ===", clsName]);
+                    unsigned int count = 0;
+                    Method *methods = class_copyMethodList(cls, &count);
+                    for (unsigned int i = 0; i < count; i++) {
+                        HWSLog([NSString stringWithFormat:@"- %@", NSStringFromSelector(method_getName(methods[i]))]);
+                    }
+                    free(methods);
+                } else {
+                    HWSLog([NSString stringWithFormat:@"❌ 未找到类: %@", clsName]);
+                }
+            }
+        });
+
         return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
     }
     return %orig;
@@ -422,27 +443,10 @@ static NSString *dumpTargetClasses() {
             if (g_intercept) {
                 // 清空之前的日志以便新一轮监控
                 if (g_logs) [g_logs removeAllObjects];
-
-                // 注入运行时对象探测
-                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                    NSArray *targets = @[@"SHWatchAppStoreManager", @"APAppInstallationManager", @"HWDSidebandManager", @"HWDDevice", @"SHHapVersionRequest", @"BMAppInstallManager"];
-                    for (NSString *clsName in targets) {
-                        Class cls = NSClassFromString(clsName);
-                        if (cls) {
-                            HWSLog([NSString stringWithFormat:@"\n=== [%@] ===", clsName]);
-                            unsigned int count = 0;
-                            Method *methods = class_copyMethodList(cls, &count);
-                            for (unsigned int i = 0; i < count; i++) {
-                                HWSLog([NSString stringWithFormat:@"- %@", NSStringFromSelector(method_getName(methods[i]))]);
-                            }
-                            free(methods);
-                        }
-                    }
-                });
             }
             
             NSString *msg = g_intercept
-                ? @"劫持已开启。\n前去下载应用，我们会抓取底层方法的列表！"
+                ? @"劫持已开启。\n前往应用市场安装应用！"
                 : @"劫持已关闭。";
             [self alert:@"状态" msg:msg];
         }]];
