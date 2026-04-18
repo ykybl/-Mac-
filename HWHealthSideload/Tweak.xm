@@ -318,7 +318,7 @@ static BOOL isTargetExt(NSString *path) {
 %end
 
 %hook NSInputStream
-+ (nullable instancetype)inputStreamWithFileAtPath:(NSString *)path {
++ (instancetype)inputStreamWithFileAtPath:(NSString *)path {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Read: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSInputStream!");
@@ -327,7 +327,7 @@ static BOOL isTargetExt(NSString *path) {
     }
     return %orig;
 }
-- (nullable instancetype)initWithFileAtPath:(NSString *)path {
+- (instancetype)initWithFileAtPath:(NSString *)path {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Init: %@", path.lastPathComponent]); }
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 NSInputStream init!");
