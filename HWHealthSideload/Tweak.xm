@@ -37,40 +37,47 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
 }
 
 // ============================================================================
-// Part 2: Bundle ID 伪装
+// Part 2: 网络层 Bundle ID 注入 (精准伪装，不影响内部路由)
 // ============================================================================
 
-%hook NSBundle
+// 在所有向外发出的 HTTP 请求中，将包含真实 Bundle ID 信息的头部
+// 替换成官方 Bundle ID，欺骗服务器鉴权。同时绝不影响 App 内部查询。
 
-- (NSString *)bundleIdentifier {
-    void *r = __builtin_return_address(0);
-    Dl_info info;
-    if (dladdr(r, &info) && info.dli_fname) {
-        const char *fname = info.dli_fname;
-        // 如果调用者来自于主程序或特定的 Huawei 库，直接伪装
-        if (strstr(fname, "HuaweiHealth") || strstr(fname, "HuaweiWear")) {
-            return @"com.huawei.iossporthealth";
-        }
-    }
+static NSString *g_realBundleId = nil;
 
-    NSString *orig = %orig;
-    if (orig && ([orig containsString:@"huawei"] || [orig containsString:@"health"])) {
-        return @"com.huawei.iossporthealth";
+%hook NSMutableURLRequest
+
+- (void)setValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
+    // 记录所有包含 "bundle" 关键字的头部，用于分析
+    if (g_intercept && [field.lowercaseString containsString:@"bundle"]) {
+        HWSLog([NSString stringWithFormat:@"Header[%@]: %@", field, value]);
     }
-    return orig;
+    // 如果头部值包含真实 Bundle ID (非官方ID)，替换为官方 ID
+    if (g_realBundleId && value && [value containsString:g_realBundleId]
+        && ![value containsString:@"com.huawei.iossporthealth"]) {
+        NSString *fixed = [value stringByReplacingOccurrencesOfString:g_realBundleId
+                                                           withString:@"com.huawei.iossporthealth"];
+        HWSLog([NSString stringWithFormat:@"🔐 替换请求头 Bundle ID: %@", field]);
+        %orig(fixed, field);
+        return;
+    }
+    %orig;
 }
 
-- (id)objectForInfoDictionaryKey:(NSString *)key {
-    if ([key isEqualToString:@"CFBundleIdentifier"]) {
-        void *r = __builtin_return_address(0);
-        Dl_info info;
-        if (dladdr(r, &info) && info.dli_fname) {
-            if (strstr(info.dli_fname, "HuaweiHealth") || strstr(info.dli_fname, "HuaweiWear")) {
-                return @"com.huawei.iossporthealth";
-            }
+- (void)setHTTPBody:(NSData *)data {
+    // 如果请求体包含真实 Bundle ID，也进行替换
+    if (data && g_realBundleId) {
+        NSString *body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (body && [body containsString:g_realBundleId]
+            && ![body containsString:@"com.huawei.iossporthealth"]) {
+            NSString *fixed = [body stringByReplacingOccurrencesOfString:g_realBundleId
+                                                              withString:@"com.huawei.iossporthealth"];
+            HWSLog(@"🔐 替换请求体 Bundle ID");
+            %orig([fixed dataUsingEncoding:NSUTF8StringEncoding]);
+            return;
         }
     }
-    return %orig;
+    %orig;
 }
 
 %end
@@ -340,10 +347,13 @@ static NSString *dumpTargetClasses() {
 }
 
 - (void)menu {
+    NSString *bundleStatus = g_realBundleId
+        ? [NSString stringWithFormat:@"真实ID: %@\n→ 已拦截网络层替换为官方ID", g_realBundleId]
+        : @"Bundle ID: 未捕获";
     NSString *st = g_hapPath
-        ? [NSString stringWithFormat:@"文件: %@\n劫持: %@",
-           [g_hapPath lastPathComponent], g_intercept ? @"已开启" : @"已关闭"]
-        : @"未选择文件";
+        ? [NSString stringWithFormat:@"%@\n\nHAP: %@\n劫持: %@",
+           bundleStatus, [g_hapPath lastPathComponent], g_intercept ? @"已开启" : @"已关闭"]
+        : bundleStatus;
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
@@ -467,6 +477,10 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 }
 
 %ctor {
+    // 立即捕获真实 Bundle ID，用于网络请求替换 (此时 hook 尚未生效，取到的是真实值)
+    g_realBundleId = [[[NSBundle mainBundle] bundleIdentifier] copy];
+    NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
+
     dispatch_async(dispatch_get_main_queue(), ^{
         struct rebinding rb[1];
         rb[0].name = "SecCodeCheckValidity";
