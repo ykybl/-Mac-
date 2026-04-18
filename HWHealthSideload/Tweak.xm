@@ -2,10 +2,12 @@
 #import <objc/runtime.h>
 #import "fishhook.h"
 #import <sys/sysctl.h>
+#import <Security/Security.h>
+#import <dlfcn.h>
 
 // ============================================================================
-//  HWHealthSideload v4.2
-//  修复: 移除 open() Hook (导致闪退) + 修复底部导航栏消失
+//  HWHealthSideload v4.3
+//  修复: 底部导航栏消失 (缩小 BundleID 伪装范围), 引入签名防检测
 // ============================================================================
 
 static NSString *g_hapPath = nil;
@@ -34,22 +36,46 @@ static int my_sysctl(int *name, u_int namelen, void *info, size_t *infosize, voi
 }
 
 // ============================================================================
-// Part 2: Bundle ID
+// Part 2: Bundle ID & Signature Bypass
 // ============================================================================
 
 %hook NSBundle
+
 - (NSString *)bundleIdentifier {
-    if ([self isEqual:[NSBundle mainBundle]])
-        return @"com.huawei.iossporthealth";
+    if ([self isEqual:[NSBundle mainBundle]]) {
+        Dl_info info;
+        if (dladdr(__builtin_return_address(0), &info) && info.dli_fname) {
+            if (strstr(info.dli_fname, "/System/Library/") == NULL && 
+                strstr(info.dli_fname, "/usr/lib/") == NULL) {
+                return @"com.huawei.iossporthealth";
+            }
+        }
+    }
     return %orig;
 }
+
 - (id)objectForInfoDictionaryKey:(NSString *)key {
-    if ([self isEqual:[NSBundle mainBundle]] &&
-        [key isEqualToString:@"CFBundleIdentifier"])
-        return @"com.huawei.iossporthealth";
+    if ([self isEqual:[NSBundle mainBundle]] && [key isEqualToString:@"CFBundleIdentifier"]) {
+        Dl_info info;
+        if (dladdr(__builtin_return_address(0), &info) && info.dli_fname) {
+            if (strstr(info.dli_fname, "/System/Library/") == NULL && 
+                strstr(info.dli_fname, "/usr/lib/") == NULL) {
+                return @"com.huawei.iossporthealth";
+            }
+        }
+    }
     return %orig;
 }
 %end
+
+%hookf(OSStatus, SecCodeCheckValidity, SecCodeRef code, SecCSFlags flags, SecRequirementRef requirement) {
+    return errSecSuccess;
+}
+
+%hookf(OSStatus, SecCodeCopySelf, SecCSFlags flags, SecCodeRef *self_p) {
+    OSStatus orig = %orig;
+    return errSecSuccess;
+}
 
 // ============================================================================
 // Part 3: NSFileManager 拦截
@@ -153,7 +179,14 @@ static NSString *searchClasses(NSArray *keywords) {
     self.btn.layer.zPosition = 99999;
 
     [self.btn addTarget:self action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];
-    [w addSubview:self.btn];
+    
+    UIViewController *vc = w.rootViewController;
+    if (vc && vc.view) {
+        [vc.view addSubview:self.btn];
+        [vc.view bringSubviewToFront:self.btn];
+    } else {
+        [w addSubview:self.btn];
+    }
 
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
         initWithTarget:self action:@selector(drag:)];
@@ -273,29 +306,36 @@ static NSString *searchClasses(NSArray *keywords) {
 @end
 
 // ============================================================================
-// Part 6: Window Hook
+// Part 6: Window Hook & Setup
 // ============================================================================
 
-%hook UIWindow
-- (void)makeKeyAndVisible {
-    %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-        dispatch_get_main_queue(), ^{
-        [[HWSideloadUI shared] attach:self];
+static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIWindow *w = [UIApplication sharedApplication].delegate.window;
+            if (!w) w = [UIApplication sharedApplication].keyWindow;
+            if (w) [[HWSideloadUI shared] attach:w];
+        });
     });
 }
-%end
 
 // ============================================================================
-// Part 7: Constructor — 注意: 不再 Hook open()
+// Part 7: Constructor
 // ============================================================================
 
 %ctor {
-    NSLog(@"[HWSideload] v4.2 loaded");
+    NSLog(@"[HWSideload] v4.3 loaded");
     struct rebinding h[] = {
         {"ptrace", (void *)my_ptrace, (void **)&orig_ptrace},
         {"sysctl", (void *)my_sysctl, (void **)&orig_sysctl},
     };
     rebind_symbols(h, 2);
-    NSLog(@"[HWSideload] hooks active (ptrace+sysctl only)");
+    
+    CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
+                                    appDidBecomeActive,
+                                    (CFStringRef)UIApplicationDidBecomeActiveNotification,
+                                    NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    NSLog(@"[HWSideload] hooks active");
 }
+
