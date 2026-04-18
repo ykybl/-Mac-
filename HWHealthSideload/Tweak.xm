@@ -186,59 +186,57 @@ static BOOL isTargetExt(NSString *path) {
 
 - (BOOL)moveItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 moveItemAtURL!");
-        [self removeItemAtURL:dstU error:nil];
+    
+    // v4.19: 只要开启劫持，不论选没选 HAP，只要看到 .bin 就开始全宇宙搜寻底层接口
+    if (g_intercept && isTargetExt(dstU.path)) {
+        HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         
-        // 这里我们不再去猜类名了。我们要暴力扫描全宇宙（当前进程的所有类和所有方法）。
-        // 只要方法名里包含 SendFile, TransferFile, PushFile, InstallApp, SendData, InstallPkg，我们就把它揪出来！
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-            HWSLog(@"\n\n====== 开始全宇宙搜索越狱通信接口 ======");
-            
-            NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata"];
-            
-            int n = objc_getClassList(NULL, 0);
-            Class *classes = (Class *)malloc(sizeof(Class) * n);
-            objc_getClassList(classes, n);
-            
-            for (int i = 0; i < n; i++) {
-                NSString *clsName = NSStringFromClass(classes[i]);
-                // 跳过一些明显无关的系统类，加快速度并防止崩溃
-                if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) {
-                    continue;
-                }
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.19] 开始全宇宙深度搜索蓝牙/P2P传输接口 ======");
                 
-                unsigned int count = 0;
-                Method *methods = class_copyMethodList(classes[i], &count);
-                for (unsigned int m = 0; m < count; m++) {
-                    NSString *mName = NSStringFromSelector(method_getName(methods[m]));
-                    for (NSString *kw in mKws) {
-                        if ([mName localizedCaseInsensitiveContainsString:kw]) {
-                            HWSLog([NSString stringWithFormat:@"🎯 发现目标方法: -[%@ %@]", clsName, mName]);
-                            break;
+                NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2p", @"ble", @"ota", @"bluetooth"];
+                
+                int n = objc_getClassList(NULL, 0);
+                Class *classes = (Class *)malloc(sizeof(Class) * n);
+                objc_getClassList(classes, n);
+                
+                for (int i = 0; i < n; i++) {
+                    NSString *clsName = NSStringFromClass(classes[i]);
+                    if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) continue;
+                    
+                    unsigned int count = 0;
+                    Method *methods = class_copyMethodList(classes[i], &count);
+                    for (unsigned int m = 0; m < count; m++) {
+                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                        for (NSString *kw in mKws) {
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                                HWSLog([NSString stringWithFormat:@"🎯🎯 捕获方法: -[%@ %@]", clsName, mName]);
+                                break;
+                            }
                         }
                     }
-                }
-                if (methods) free(methods);
-                
-                methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
-                for (unsigned int m = 0; m < count; m++) {
-                    NSString *mName = NSStringFromSelector(method_getName(methods[m]));
-                    for (NSString *kw in mKws) {
-                        if ([mName localizedCaseInsensitiveContainsString:kw]) {
-                            HWSLog([NSString stringWithFormat:@"🎯 发现目标方法: +[%@ %@]", clsName, mName]);
-                            break;
+                    if (methods) free(methods);
+                    
+                    methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
+                    for (unsigned int m = 0; m < count; m++) {
+                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                        for (NSString *kw in mKws) {
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                                HWSLog([NSString stringWithFormat:@"🎯🎯 捕获方法: +[%@ %@]", clsName, mName]);
+                                break;
+                            }
                         }
                     }
+                    if (methods) free(methods);
                 }
-                if (methods) free(methods);
-            }
-            free(classes);
-            HWSLog(@"====== 全宇宙搜索完成 ======\n\n");
+                free(classes);
+                HWSLog(@"🎯🎯🎯 ====== 全宇宙扫描完成，请查看上方 [🎯🎯] 标记的方法 ======\n\n");
+            });
         });
 
-        // 放行原始文件，让它原本合法的 .bin 成功通过 DRM 解密，
-        // 从而完整跑向下游蓝牙传输逻辑，我们只为了用全宇宙扫描抓出接口名！
+        // 依然向原始文件放行，绕过 DRM 检查以命中传输逻辑
         return %orig;
     }
     return %orig;
