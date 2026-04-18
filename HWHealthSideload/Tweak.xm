@@ -51,7 +51,7 @@ static OSStatus my_SecCodeCopySelf(uint32_t flags, void **selfCode) {
 
 - (NSString *)bundleIdentifier {
     NSString *orig = %orig;
-    if (g_intercept && ([orig containsString:@"huawei"] || [orig containsString:@"health"])) {
+    if ([orig containsString:@"huawei"] || [orig containsString:@"health"] || [orig containsString:@"HWHealthSideload"]) {
         void *r = __builtin_return_address(0);
         Dl_info info;
         if (dladdr(r, &info)) {
