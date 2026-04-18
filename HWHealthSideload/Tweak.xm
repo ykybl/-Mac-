@@ -45,35 +45,94 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
 
 static NSString *g_realBundleId = nil;
 
+// ---- 核心替换函数：处理单条请求的所有 Bundle ID ----
+static NSMutableURLRequest *sanitizeRequest(NSURLRequest *req) {
+    if (!g_realBundleId) return [req mutableCopy];
+    NSString *realID = g_realBundleId;
+    NSString *fakeID = @"com.huawei.iossporthealth";
+    if ([realID isEqualToString:fakeID]) return [req mutableCopy];
+
+    NSMutableURLRequest *m = [req mutableCopy];
+
+    // 1. URL (如果 query param 或 path 中包含 Bundle ID)
+    NSString *urlStr = m.URL.absoluteString;
+    if ([urlStr containsString:realID]) {
+        NSString *fixed = [urlStr stringByReplacingOccurrencesOfString:realID withString:fakeID];
+        m.URL = [NSURL URLWithString:fixed];
+        HWSLog([NSString stringWithFormat:@"🔐 URL BundleID->%@", m.URL.host]);
+    }
+
+    // 2. 全量 Header
+    NSDictionary *headers = m.allHTTPHeaderFields;
+    if (headers) {
+        NSMutableDictionary *newH = [headers mutableCopy];
+        BOOL ch = NO;
+        for (NSString *k in headers) {
+            NSString *v = headers[k];
+            if ([v containsString:realID]) {
+                newH[k] = [v stringByReplacingOccurrencesOfString:realID withString:fakeID];
+                ch = YES;
+            }
+        }
+        if (ch) {
+            [m setAllHTTPHeaderFields:newH];
+            HWSLog(@"🔐 Header BundleID 已替换");
+        }
+    }
+
+    // 3. Body (JSON/Form 等 UTF8 文本)
+    NSData *body = m.HTTPBody;
+    if (body) {
+        NSString *bs = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding];
+        if (bs && [bs containsString:realID]) {
+            m.HTTPBody = [[bs stringByReplacingOccurrencesOfString:realID withString:fakeID]
+                          dataUsingEncoding:NSUTF8StringEncoding];
+            HWSLog(@"🔐 Body BundleID 已替换");
+        }
+    }
+    return m;
+}
+
 %hook NSMutableURLRequest
 
 - (void)setValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
-    // 记录所有包含 "bundle" 关键字的头部，用于分析
-    if (g_intercept && [field.lowercaseString containsString:@"bundle"]) {
-        HWSLog([NSString stringWithFormat:@"Header[%@]: %@", field, value]);
-    }
-    // 如果头部值包含真实 Bundle ID (非官方ID)，替换为官方 ID
     if (g_realBundleId && value && [value containsString:g_realBundleId]
         && ![value containsString:@"com.huawei.iossporthealth"]) {
-        NSString *fixed = [value stringByReplacingOccurrencesOfString:g_realBundleId
-                                                           withString:@"com.huawei.iossporthealth"];
-        HWSLog([NSString stringWithFormat:@"🔐 替换请求头 Bundle ID: %@", field]);
-        %orig(fixed, field);
+        HWSLog([NSString stringWithFormat:@"🔐 Header Setter: %@", field]);
+        %orig([value stringByReplacingOccurrencesOfString:g_realBundleId
+                                              withString:@"com.huawei.iossporthealth"], field);
         return;
     }
     %orig;
 }
 
+- (void)setAllHTTPHeaderFields:(NSDictionary *)fields {
+    if (!g_realBundleId || !fields) { %orig; return; }
+    NSString *realID = g_realBundleId;
+    if ([realID isEqualToString:@"com.huawei.iossporthealth"]) { %orig; return; }
+    NSMutableDictionary *fixed = [fields mutableCopy];
+    BOOL ch = NO;
+    for (NSString *k in fields) {
+        NSString *v = fields[k];
+        if ([v containsString:realID]) {
+            fixed[k] = [v stringByReplacingOccurrencesOfString:realID
+                                                   withString:@"com.huawei.iossporthealth"];
+            ch = YES;
+        }
+    }
+    if (ch) HWSLog(@"🔐 AllHeaders BundleID 已替换");
+    %orig(ch ? fixed : fields);
+}
+
 - (void)setHTTPBody:(NSData *)data {
-    // 如果请求体包含真实 Bundle ID，也进行替换
     if (data && g_realBundleId) {
-        NSString *body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        if (body && [body containsString:g_realBundleId]
-            && ![body containsString:@"com.huawei.iossporthealth"]) {
-            NSString *fixed = [body stringByReplacingOccurrencesOfString:g_realBundleId
-                                                              withString:@"com.huawei.iossporthealth"];
-            HWSLog(@"🔐 替换请求体 Bundle ID");
-            %orig([fixed dataUsingEncoding:NSUTF8StringEncoding]);
+        NSString *bs = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (bs && [bs containsString:g_realBundleId]
+            && ![bs containsString:@"com.huawei.iossporthealth"]) {
+            HWSLog(@"🔐 Body Setter BundleID 已替换");
+            %orig([[bs stringByReplacingOccurrencesOfString:g_realBundleId
+                                               withString:@"com.huawei.iossporthealth"]
+                   dataUsingEncoding:NSUTF8StringEncoding]);
             return;
         }
     }
@@ -192,30 +251,45 @@ static NSString *g_realBundleId = nil;
 
 %hook NSURLSession
 
+// 登录鉴权用的是 dataTask，不是 downloadTask，必须拦截！
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
+    NSMutableURLRequest *s = sanitizeRequest(request);
+    HWSLog([NSString stringWithFormat:@"📡 DataTask: %@ %@", s.HTTPMethod, s.URL.path]);
+    return %orig(s);
+}
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
+                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))h {
+    NSMutableURLRequest *s = sanitizeRequest(request);
+    HWSLog([NSString stringWithFormat:@"📡 DataTask+: %@ %@", s.HTTPMethod, s.URL.path]);
+    return %orig(s, h);
+}
+
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)data {
+    return %orig(sanitizeRequest(request), data);
+}
+
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request
+                                         fromData:(NSData *)data
+                               completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))h {
+    return %orig(sanitizeRequest(request), data, h);
+}
+
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
-    if (g_intercept) {
-        NSString *u = request.URL.absoluteString;
-        HWSLog([NSString stringWithFormat:@"NET Req: %@", request.URL.lastPathComponent]);
-        
-        if (g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
-            HWSLog(@"💥 自动替换网络请求 (Request)为本地 HAP!");
-            NSMutableURLRequest *newReq = [request mutableCopy];
-            newReq.URL = [NSURL fileURLWithPath:g_hapPath];
-            return %orig(newReq);
-        }
+    NSMutableURLRequest *s = sanitizeRequest(request);
+    NSString *u = s.URL.absoluteString;
+    if (g_intercept && g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
+        HWSLog(@"💥 替换下载请求为本地 HAP!");
+        s.URL = [NSURL fileURLWithPath:g_hapPath];
     }
-    return %orig;
+    return %orig(s);
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
-    if (g_intercept) {
-        NSString *u = url.absoluteString;
-        HWSLog([NSString stringWithFormat:@"NET URL: %@", url.lastPathComponent]);
-        
-        if (g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
-            HWSLog(@"💥 自动替换网络请求 (URL)为本地 HAP!");
-            return %orig([NSURL fileURLWithPath:g_hapPath]);
-        }
+    NSString *u = url.absoluteString;
+    if (g_intercept && g_hapPath && ([u containsString:@".hap"] || [u containsString:@"pkg"])) {
+        HWSLog(@"💥 替换下载 URL 为本地 HAP!");
+        return %orig([NSURL fileURLWithPath:g_hapPath]);
     }
     return %orig;
 }
