@@ -192,22 +192,43 @@ static BOOL isTargetExt(NSString *path) {
         g_intercept = NO;
         
         // 当我们截获真实下载时，由于用户肯定在商店页面，所以类肯定加载了。
-        // 这里立即抓取底层类的方法列表！
+        // 这里立即抓取底层类的方法列表！扫描全部类以支持 Swift 命名空间 (如 HuaweiWear.SHWatchAppStoreManager)
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-            NSArray *targets = @[@"SHWatchAppStoreManager", @"APAppInstallationManager", @"HWDSidebandManager", @"HWDDevice", @"SHHapVersionRequest", @"BMAppInstallManager", @"HWWearablePkgInstallation"];
-            for (NSString *clsName in targets) {
-                Class cls = NSClassFromString(clsName);
-                if (cls) {
-                    HWSLog([NSString stringWithFormat:@"\n=== [%@] ===", clsName]);
-                    unsigned int count = 0;
-                    Method *methods = class_copyMethodList(cls, &count);
-                    for (unsigned int i = 0; i < count; i++) {
-                        HWSLog([NSString stringWithFormat:@"- %@", NSStringFromSelector(method_getName(methods[i]))]);
+            NSArray *targets = @[@"SHWatchAppStoreManager", @"APAppInstallationManager", @"HWDSidebandManager", @"SHHapVersionRequest", @"BMAppInstallManager", @"HWWearablePkgInstallation", @"WearableDevice"];
+            
+            int n = objc_getClassList(NULL, 0);
+            Class *classes = (Class *)malloc(sizeof(Class) * n);
+            objc_getClassList(classes, n);
+            
+            BOOL foundAny = NO;
+            for (int i = 0; i < n; i++) {
+                NSString *name = NSStringFromClass(classes[i]);
+                for (NSString *t in targets) {
+                    if ([name containsString:t]) {
+                        foundAny = YES;
+                        HWSLog([NSString stringWithFormat:@"\n=== [%@] ===", name]);
+                        
+                        unsigned int count = 0;
+                        Method *methods = class_copyMethodList(classes[i], &count);
+                        for (unsigned int m = 0; m < count; m++) {
+                            HWSLog([NSString stringWithFormat:@"- %@", NSStringFromSelector(method_getName(methods[m]))]);
+                        }
+                        free(methods);
+                        
+                        // Class Methods
+                        Method *classMethods = class_copyMethodList(object_getClass((id)classes[i]), &count);
+                        for (unsigned int m = 0; m < count; m++) {
+                            HWSLog([NSString stringWithFormat:@"+ %@", NSStringFromSelector(method_getName(classMethods[m]))]);
+                        }
+                        free(classMethods);
                     }
-                    free(methods);
-                } else {
-                    HWSLog([NSString stringWithFormat:@"❌ 未找到类: %@", clsName]);
                 }
+            }
+            free(classes);
+            if (!foundAny) {
+                HWSLog(@"❌ 遍历了全部类，竟然还是没找到目标类！");
+            } else {
+                HWSLog(@"✅ 底层方法转储完成，请复制日志！");
             }
         });
 
