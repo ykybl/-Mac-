@@ -358,7 +358,8 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 // 手表端返回文件传输协商结果时调用，errorCode 就是手表告诉我们的错误原因
 - (void)sendFileTransferNegotiate:(id)negotiate errorCode:(NSInteger)errorCode {
-    HWSLog([NSString stringWithFormat:@"\n🔴 [WSSCommonFileMgr] sendFileTransferNegotiate 被调用！\n  ➤ errorCode(手表返回) = %ld\n  ➤ negotiate = %@", (long)errorCode, negotiate]);
+    HWSLog([NSString stringWithFormat:@"\n🔴 [WSSCommonFileMgr] sendFileTransferNegotiate!\n  ➤ errorCode = %ld\n  ➤ negotiate = %@", (long)errorCode, negotiate]);
+    if (negotiate) { dumpObjectProperties(negotiate, @"Negotiate协商对象属性"); }
     %orig;
 }
 
@@ -368,17 +369,11 @@ static void replacePathAndSizeInFileInfo(id info) {
     %orig;
 }
 
-// 这是手机发往手表的"预检"指令，checkMode 决定手表用哪种模式校验文件
-// checkMode=1 可能是"AppGallery签名校验"，改为 0 可能是"无校验/开发者模式"
+// 此方法发送 checkMode 到手表，允许华为协商自然进行
+// 重要：不要改变 checkMode! 手表需要 mode=3，改为 0 会导致 errorCode=140001
 - (void)sendFileCheckMode:(NSInteger)checkMode fileid:(NSInteger)fileid offsetSize:(long long)offsetSize {
-    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgr] sendFileCheckMode 被劫持！\n  ➤ 原始 checkMode = %ld\n  ➤ fileid = %ld, offsetSize = %lld", (long)checkMode, (long)fileid, (long long)offsetSize]);
-    if (g_intercept) {
-        // 🔑 核心尝试：将 checkMode 强制改为 0，绕过手表侧的分发证书校验
-        HWSLog(@"  ➤ ⚡⚡⚡ 强制将 checkMode 从原值改为 0，尝试绕过签名校验模式！");
-        %orig(0, fileid, offsetSize);
-    } else {
-        %orig;
-    }
+    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgr] sendFileCheckMode!\n  ➤ checkMode = %ld (mode=3 是正确的，不要改！)\n  ➤ fileid = %ld, offsetSize = %lld", (long)checkMode, (long)fileid, (long long)offsetSize]);
+    %orig;
 }
 
 // 手表返回数据时调用，commondID 里可能携带了错误码
@@ -443,9 +438,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.44: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.45: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.44] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.45] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -486,7 +481,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.44] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.45] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -891,7 +886,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.44"
+        alertControllerWithTitle:@"HAP 侧载 v4.45"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
