@@ -365,8 +365,9 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 // 文件传输完成时调用
 - (void)finishPushFileWithType:(NSInteger)type {
-    HWSLog([NSString stringWithFormat:@"\n🔴🔴🔴 [WSSCommonFileMgr] finishPushFileWithType! type = %ld", (long)type]);
-    // 尝试捕获 self 的状态
+    HWSLog(@"\n\n╬═══════════════════════════════╬");
+    HWSLog([NSString stringWithFormat:@"🔴🔴🔴 [WSSCommonFileMgr] 传输完成！finishPushFileWithType = %ld (0=成功, 其他=失败)", (long)type]);
+    HWSLog(@"╬═══════════════════════════════╬\n");
     @try { dumpObjectProperties(self, @"FileMgr最终状态"); } @catch (...) {}
     %orig;
 }
@@ -466,9 +467,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.47: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.48: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.47] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.48] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -500,10 +501,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 }
                 free(classes);
                 // 只打印总数，不打印每个方法（避免几百行噪音）
-                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.47] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.48] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.47] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.48] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -578,6 +579,11 @@ static id replaceTargetJson(id obj, long long hapSize) {
                        && [val isKindOfClass:[NSString class]]) {
                 HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 bundle: %@ -> %@", val, g_hapBundleID]);
                 m[k] = g_hapBundleID;
+            } else if ([lk isEqualToString:@"installtype"] && [val isKindOfClass:[NSNumber class]]) {
+                // 尝试将 installType=0（市场正式安装）改为 1（开发者/更新模式，可能绕过证书验证）
+                NSInteger origType = [val integerValue];
+                HWSLog([NSString stringWithFormat:@"✨ installType: %ld -> 1 (尝试开发者模式)", (long)origType]);
+                m[k] = @1;
             } else if ([val isKindOfClass:[NSString class]] && ([lk isEqualToString:@"sign"] || [lk isEqualToString:@"signature"] || [lk isEqualToString:@"cert"] || [lk isEqualToString:@"certsign"])) {
                 HWSLog([NSString stringWithFormat:@"✨ 清除服务端签名约束: %@", k]);
                 m[k] = @"";
@@ -908,7 +914,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.47"
+        alertControllerWithTitle:@"HAP 侧载 v4.48"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
