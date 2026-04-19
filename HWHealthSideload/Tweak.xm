@@ -681,15 +681,8 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
 
     // Initialize Dynamic Hooks
-    Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
-    Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
-    if (wifiCls || storeCls) {
-        NSLog(@"[HWSideload] Found dynamic classes, initializing SideloadHooks.");
-        %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls);
-    } else {
-        NSLog(@"[HWSideload] Warning: Target classes not found initially.");
-        %init(SideloadHooks); // fallback
-    }
+    NSLog(@"[HWSideload] Initializing SideloadHooks.");
+    %init(SideloadHooks, SHDWiFiTransferManager=NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager"), SHWatchAppStoreManager=NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager"));
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
 
     dispatch_async(dispatch_get_main_queue(), ^{
