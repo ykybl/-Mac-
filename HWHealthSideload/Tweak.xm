@@ -682,6 +682,7 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 
     // Initialize Dynamic Hooks
     NSLog(@"[HWSideload] Initializing SideloadHooks.");
+    %init(_ungrouped);
     %init(SideloadHooks, SHDWiFiTransferManager=NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager"), SHWatchAppStoreManager=NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager"));
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
 
