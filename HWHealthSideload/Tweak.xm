@@ -409,6 +409,86 @@ static NSString *dumpTargetClasses() {
 }
 
 // ============================================================================
+// Part 4.5: Dynamic Transfer Hooking
+// ============================================================================
+
+static void dumpObjectProperties(id obj, NSString *tag) {
+    if (!obj) {
+        HWSLog([NSString stringWithFormat:@"[Object Dump: %@] Object is nil", tag]);
+        return;
+    }
+    NSMutableString *str = [NSMutableString stringWithFormat:@"\n=== [Object Dump: %@] ===\nClass: %@\n", tag, NSStringFromClass([obj class])];
+    
+    unsigned int count;
+    objc_property_t *properties = class_copyPropertyList([obj class], &count);
+    for (int i = 0; i < count; i++) {
+        objc_property_t property = properties[i];
+        NSString *name = [NSString stringWithUTF8String:property_getName(property)];
+        id value = nil;
+        @try {
+            value = [obj valueForKey:name];
+        } @catch (NSException *e) {
+            value = @"<Exception>";
+        }
+        [str appendFormat:@"@property %@ = %@\n", name, value];
+    }
+    if (properties) free(properties);
+    [str appendString:@"=========================\n"];
+    HWSLog(str);
+}
+
+%group SideloadHooks
+
+%hook SHDWiFiTransferManager
+
+- (void)transferFileInfo:(id)info callback:(id)cb {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] transferFileInfo:callback:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    
+    if (g_intercept && g_hapPath) {
+        HWSLog([NSString stringWithFormat:@"🚀 尝试动态篡改路径... 目标: %@", g_hapPath]);
+        @try {
+            // Attempt to look for path properties and overwrite them
+            unsigned int count;
+            objc_property_t *properties = class_copyPropertyList([info class], &count);
+            for (int i = 0; i < count; i++) {
+                objc_property_t property = properties[i];
+                NSString *name = [NSString stringWithUTF8String:property_getName(property)];
+                id value = [info valueForKey:name];
+                if ([value isKindOfClass:[NSString class]]) {
+                    NSString *valStr = (NSString *)value;
+                    if ([valStr containsString:@".bin"] || [valStr containsString:@".hap"] || [valStr containsString:@".pkg"]) {
+                        HWSLog([NSString stringWithFormat:@"✅ 发现潜在路径属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapPath]);
+                        [info setValue:g_hapPath forKey:name];
+                        HWSLog(@"✨ 路径修改成功！");
+                    }
+                }
+            }
+            if (properties) free(properties);
+        } @catch (NSException *e) {
+            HWSLog([NSString stringWithFormat:@"❌ 动态修改异常: %@", e]);
+        }
+    }
+    
+    %orig;
+}
+
+%end
+
+%hook SHWatchAppStoreManager
+
+- (void)pushFileProgress:(id)progress {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] pushFileProgress:");
+    dumpObjectProperties(progress, @"Progress Object");
+    %orig;
+}
+
+%end
+
+%end
+
+
+// ============================================================================
 // Part 5: UI
 // ============================================================================
 
@@ -598,6 +678,18 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 %ctor {
     // 立即捕获真实 Bundle ID，用于网络请求替换 (此时 hook 尚未生效，取到的是真实值)
     g_realBundleId = [[[NSBundle mainBundle] bundleIdentifier] copy];
+    NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
+
+    // Initialize Dynamic Hooks
+    Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
+    Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
+    if (wifiCls || storeCls) {
+        NSLog(@"[HWSideload] Found dynamic classes, initializing SideloadHooks.");
+        %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls);
+    } else {
+        NSLog(@"[HWSideload] Warning: Target classes not found initially.");
+        %init(SideloadHooks); // fallback
+    }
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
 
     dispatch_async(dispatch_get_main_queue(), ^{
