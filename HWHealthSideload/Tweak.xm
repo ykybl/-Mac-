@@ -280,32 +280,16 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 - (BOOL)copyItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(dst) && ![dst isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 copyItemAtPath!");
-        BOOL res = %orig(g_hapPath, dst, err);
-        return res;
-    }
     return %orig;
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 copyItemAtURL!");
-        BOOL res = %orig([NSURL fileURLWithPath:g_hapPath], dstU, err);
-        return res;
-    }
     return %orig;
 }
 
 - (BOOL)moveItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(dst) && ![dst isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 moveItemAtPath!");
-        [self removeItemAtPath:dst error:nil];
-        BOOL res = [self copyItemAtPath:g_hapPath toPath:dst error:err];
-        return res;
-    }
     return %orig;
 }
 
@@ -398,12 +382,6 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteURL: %@", url.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 NSData writeToURL!");
-        NSFileManager *fm = [NSFileManager defaultManager];
-        [fm removeItemAtURL:url error:nil];
-        return [fm copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:url error:nil];
-    }
     return %orig;
 }
 
@@ -427,10 +405,6 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadFile: %@", path.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 Init ReadFile!");
-        return %orig(g_hapPath, readOptionsMask, errorPtr);
-    }
     return %orig;
 }
 
@@ -445,10 +419,41 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %end
 
+%hook NSFileManager
+- (NSDictionary *)attributesOfItemAtPath:(NSString *)path error:(NSError **)err {
+    NSDictionary *origAttrs = %orig;
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        NSString *stack = [[NSThread callStackSymbols] componentsJoinedByString:@"\n"];
+        if (![stack containsString:@"alisec_"] && ![stack containsString:@"Security"]) {
+            NSDictionary *hapAttrs = %orig(g_hapPath, nil);
+            if (hapAttrs && origAttrs) {
+                NSMutableDictionary *newAttrs = [origAttrs mutableCopy];
+                newAttrs[NSFileSize] = hapAttrs[NSFileSize];
+                HWSLog([NSString stringWithFormat:@"💥 [尺寸欺骗] 将 .bin 伪装为 .hap 大小: %@ -> %@", origAttrs[NSFileSize], hapAttrs[NSFileSize]]);
+                return newAttrs;
+            }
+        } else {
+            HWSLog(@"🛡️ [DRM 嗅探] 阿里安全模块正在获取大小，放行真实 .bin 尺寸!");
+        }
+    }
+    return origAttrs;
+}
+%end
+
 %hook NSFileHandle
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
-    if (g_intercept) { HWSLog([NSString stringWithFormat:@"FH Read: %@", path.lastPathComponent]); }
-    // 暂时关闭替换，防止 alisec_crypto_dec 崩溃，为了抓取完美的栈
+    if (g_intercept && isTargetExt(path)) { 
+        if (g_hapPath && ![path isEqualToString:g_hapPath]) {
+            NSString *stack = [[NSThread callStackSymbols] componentsJoinedByString:@"\n"];
+            if ([stack containsString:@"alisec_"] || [stack containsString:@"Security"]) {
+                HWSLog(@"🛡️ [DRM 嗅探] 阿里安全模块正在扫描，放行读取物理 .bin!");
+                return %orig(path);
+            } else {
+                HWSLog(@"💥 [传输嗅探] 底层模块拉取数据，狸猫换太子，喂入外挂 .hap 数据流! 🎯");
+                return %orig(g_hapPath);
+            }
+        }
+    }
     return %orig;
 }
 %end
