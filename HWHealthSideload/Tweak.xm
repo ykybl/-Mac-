@@ -471,40 +471,40 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 // 探针：捕获应用市场下载 API 的响应，用于定位 bundle ID / hash 字段
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    if (!g_intercept) return %orig;
+    if (!g_intercept || !completionHandler) return %orig;
 
-    return %orig(request, ^(NSData *data, NSURLResponse *response, NSError *error) {
+    // Logos 不支持在 %orig 里直接内联 block，先声明再传入
+    void (^wrapped)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
         if (data && !error) {
             NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-            NSString *url = http.URL.absoluteString;
-            // 只关注可能是应用市场/推送文件相关的接口
-            BOOL interesting = [url containsString:@"appgallery"] ||
-                               [url containsString:@"appmarket"] ||
-                               [url containsString:@"watchapp"] ||
-                               [url containsString:@"wearapp"] ||
-                               [url containsString:@"appstore"] ||
-                               [url containsString:@"install"] ||
-                               [url containsString:@"download"] ||
-                               [url containsString:@"upgrade"];
+            NSString *urlStr = http.URL.absoluteString;
+            BOOL interesting = [urlStr containsString:@"appgallery"] ||
+                               [urlStr containsString:@"appmarket"]  ||
+                               [urlStr containsString:@"watchapp"]   ||
+                               [urlStr containsString:@"wearapp"]    ||
+                               [urlStr containsString:@"appstore"]   ||
+                               [urlStr containsString:@"install"]    ||
+                               [urlStr containsString:@"download"]   ||
+                               [urlStr containsString:@"upgrade"];
             if (interesting) {
                 NSString *body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
                 if (body && (
-                    [body containsString:@".bin"] ||
-                    [body containsString:@"bundleName"] ||
+                    [body containsString:@".bin"]        ||
+                    [body containsString:@"bundleName"]  ||
                     [body containsString:@"packageName"] ||
-                    [body containsString:@"appId"] ||
-                    [body containsString:@"fileSize"] ||
-                    [body containsString:@"checkSum"] ||
+                    [body containsString:@"appId"]       ||
+                    [body containsString:@"fileSize"]    ||
+                    [body containsString:@"checkSum"]    ||
                     [body containsString:@"digest"]
                 )) {
-                    // 截断超长内容防止日志爆炸
                     NSString *preview = body.length > 2000 ? [body substringToIndex:2000] : body;
-                    HWSLog([NSString stringWithFormat:@"\n🌐🌐🌐 [API探针] URL: %@\n响应:\n%@", url, preview]);
+                    HWSLog([NSString stringWithFormat:@"\n🌐🌐🌐 [API探针] URL: %@\n响应:\n%@", urlStr, preview]);
                 }
             }
         }
-        if (completionHandler) completionHandler(data, response, error);
-    });
+        completionHandler(data, response, error);
+    };
+    return %orig(request, wrapped);
 }
 
 %end
