@@ -3,11 +3,14 @@
 #import <dlfcn.h>
 #import <fishhook.h>
 #import <Security/Security.h>
+#import <CommonCrypto/CommonDigest.h>
 
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wunused-variable"
 
 static NSString *g_hapPath = nil;
+static NSString *g_hapBundleID = nil;
+static NSString *g_hapChecksum = nil;
 static BOOL     g_intercept = NO;
 
 // ============================================================================
@@ -189,6 +192,7 @@ static void replacePathAndSizeInFileInfo(id info) {
             objc_property_t property = properties[i];
             NSString *name = [NSString stringWithUTF8String:property_getName(property)];
             id value = [info valueForKey:name];
+            NSString *lowerName = name.lowercaseString;
             
             if ([value isKindOfClass:[NSString class]]) {
                 NSString *valStr = (NSString *)value;
@@ -196,8 +200,18 @@ static void replacePathAndSizeInFileInfo(id info) {
                     HWSLog([NSString stringWithFormat:@"✅ 发现潜在路径属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapPath]);
                     [info setValue:g_hapPath forKey:name];
                     HWSLog(@"✨ 路径修改成功！");
+                } 
+                else if (g_hapBundleID && g_hapBundleID.length > 0 && 
+                         ([lowerName containsString:@"bundle"] || [lowerName containsString:@"package"] || [lowerName isEqualToString:@"appid"])) {
+                    HWSLog([NSString stringWithFormat:@"✅ 发现应用包名属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapBundleID]);
+                    [info setValue:g_hapBundleID forKey:name];
                 }
-            } else if ([name.lowercaseString containsString:@"size"]) {
+                else if (g_hapChecksum && g_hapChecksum.length > 0 &&
+                         ([lowerName containsString:@"check"] || [lowerName containsString:@"hash"] || [lowerName containsString:@"digest"])) {
+                    HWSLog([NSString stringWithFormat:@"✅ 发现校验和属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapChecksum]);
+                    [info setValue:g_hapChecksum forKey:name];
+                }
+            } else if ([lowerName containsString:@"size"]) {
                 NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
                 if (attrs) {
                     long long hapSize = [attrs fileSize];
@@ -301,9 +315,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.33: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.35: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.33] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.35] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -344,19 +358,8 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.33] 触发底层传输 ========");
-            
-            // 延迟初始化动态 Hook
-            Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
-            Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
-            Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
-            
-            if (wifiCls || storeCls || cmdCls) {
-                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d Cmd:%d，正在注入！", (wifiCls != nil), (storeCls != nil), (cmdCls != nil)]);
-                %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
-            } else {
-                HWSLog(@"❌ 获取动态类句柄失败。");
-            }
+            HWSLog(@"\n======== [v4.35] 触发底层传输 ========");
+            // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
         // 依然向原始文件放行，绕过 DRM 检查以命中传输逻辑
@@ -646,7 +649,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.33"
+        alertControllerWithTitle:@"HAP 侧载 v4.35"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
@@ -722,17 +725,37 @@ static NSString *dumpTargetClasses() {
 
     if (!err) {
         g_hapPath = [dst copy];
+        g_hapChecksum = fileSHA256(g_hapPath);
         NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
         unsigned long long sz = [at fileSize];
-        [self alert:@"准备就绪"
-               msg:[NSString stringWithFormat:
-                    @"%@ (%.1f MB)\n\n"
-                    @"下一步:\n"
-                    @"1. 点击侧载按钮 > 开启劫持\n"
-                    @"2. 进入手表应用市场\n"
-                    @"3. 安装任意应用\n"
-                    @"4. 手表将接收您的文件",
-                    [dst lastPathComponent], sz/1048576.0]];
+        
+        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"准备就绪"
+            message:[NSString stringWithFormat:@"已加载文件: %@\n大小: %.1f MB\n\n【重要】请输入您自己应用的包名 (Bundle ID，如 com.yourapp.watch):\n※ 如果您已经在表中修改了与载体一致则可留空", [dst lastPathComponent], sz/1048576.0]
+            preferredStyle:UIAlertControllerStyleAlert];
+            
+        [a addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+            textField.placeholder = @"留空则使用载体应用默认值";
+            textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+            // 记录之前的 bundleID（如果多次操作）方便复用
+            if (g_hapBundleID) textField.text = g_hapBundleID;
+        }];
+        
+        [a addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            UITextField *tf = a.textFields.firstObject;
+            NSString *bID = [tf.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (bID.length > 0) {
+                g_hapBundleID = [bID copy];
+                HWSLog([NSString stringWithFormat:@"已设置注入的 Bundle ID: %@", g_hapBundleID]);
+            } else {
+                g_hapBundleID = nil;
+                HWSLog(@"未设置自定义 Bundle ID，将使用系统自带的");
+            }
+            [self alert:@"提示" msg:@"设置成功！\n请点击侧载按钮 > 开启劫持\n然后进入手表应用市场安装任意应用。"];
+        }]];
+        
+        UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
+        while (vc.presentedViewController) vc = vc.presentedViewController;
+        [vc presentViewController:a animated:YES completion:nil];
     } else {
         [self alert:@"错误" msg:err.localizedDescription];
     }
@@ -766,23 +789,39 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 }
 
 %ctor {
-    // 立即捕获真实 Bundle ID，用于网络请求替换 (此时 hook 尚未生效，取到的是真实值)
     g_realBundleId = [[[NSBundle mainBundle] bundleIdentifier] copy];
-    // Initialize System Hooks
     NSLog(@"[HWSideload] Initializing main hooks.");
     %init(_ungrouped);
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
+    
+    // 尽早初始化动态类 Hook，以防竞争条件漏截
+    Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
+    Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
+    Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
+    if (wifiCls || storeCls || cmdCls) {
+        NSLog(@"[HWSideload] ✅ 成功早期获取动态类句柄: WiFi:%d Store:%d Cmd:%d，正在注入！", (wifiCls != nil), (storeCls != nil), (cmdCls != nil));
+        %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
+    } else {
+        NSLog(@"[HWSideload] ❌ 早期获取动态类句柄失败，类可能尚未加载。");
+    }
 
     dispatch_async(dispatch_get_main_queue(), ^{
         struct rebinding rb[1];
         rb[0].name = "SecCodeCheckValidity";
         rb[0].replacement = (void *)my_SecCodeCheckValidity;
         rb[0].replaced = (void **)&orig_SecCodeCheckValidity;
-
         rebind_symbols((struct rebinding *)rb, 1);
-
+        
         CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
             appDidBecomeActive, (CFStringRef)UIApplicationDidBecomeActiveNotification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+            
+        // 保底：如果在 block 里类才加载好，再执行一次 (Logos 多次 %init 是安全的)
+        Class wifiCls_late = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
+        Class storeCls_late = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
+        Class cmdCls_late = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
+        if (wifiCls_late || storeCls_late || cmdCls_late) {
+            %init(SideloadHooks, SHDWiFiTransferManager=wifiCls_late, SHWatchAppStoreManager=storeCls_late, SHDWiFiCommandSend=cmdCls_late);
+        }
     });
 }
 
