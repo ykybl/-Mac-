@@ -335,6 +335,66 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %end
 
+// ============================================================================
+// 新增：钩住 WSSCommonFileMgr 捕获手表端反馈 & 尝试绕过签名校验
+// ============================================================================
+
+%hook WSSCommonFileMgr
+
+// 手表端返回文件传输协商结果时调用，errorCode 就是手表告诉我们的错误原因
+- (void)sendFileTransferNegotiate:(id)negotiate errorCode:(NSInteger)errorCode {
+    HWSLog([NSString stringWithFormat:@"\n🔴 [WSSCommonFileMgr] sendFileTransferNegotiate 被调用！\n  ➤ errorCode(手表返回) = %ld\n  ➤ negotiate = %@", (long)errorCode, negotiate]);
+    %orig;
+}
+
+// 文件传输完成时调用，type 代表完成类型（成功/失败）
+- (void)finishPushFileWithType:(NSInteger)type {
+    HWSLog([NSString stringWithFormat:@"\n🔴 [WSSCommonFileMgr] finishPushFileWithType: type = %ld (0=成功, 其他=失败)", (long)type]);
+    %orig;
+}
+
+// 这是手机发往手表的"预检"指令，checkMode 决定手表用哪种模式校验文件
+// checkMode=1 可能是"AppGallery签名校验"，改为 0 可能是"无校验/开发者模式"
+- (void)sendFileCheckMode:(NSInteger)checkMode fileid:(NSInteger)fileid offsetSize:(long long)offsetSize {
+    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgr] sendFileCheckMode 被劫持！\n  ➤ 原始 checkMode = %ld\n  ➤ fileid = %ld, offsetSize = %lld", (long)checkMode, (long)fileid, (long long)offsetSize]);
+    if (g_intercept) {
+        // 🔑 核心尝试：将 checkMode 强制改为 0，绕过手表侧的分发证书校验
+        HWSLog(@"  ➤ ⚡⚡⚡ 强制将 checkMode 从原值改为 0，尝试绕过签名校验模式！");
+        %orig(0, fileid, offsetSize);
+    } else {
+        %orig;
+    }
+}
+
+// 手表返回数据时调用，commondID 里可能携带了错误码
+- (void)recevicedPushFileData:(NSData *)data commondID:(NSInteger)commondID deviceIdentify:(NSString *)deviceIdentify {
+    HWSLog([NSString stringWithFormat:@"\n🔵 [WSSCommonFileMgr] recevicedPushFileData:\n  ➤ commondID = %ld, dataLen = %lu", (long)commondID, (unsigned long)data.length]);
+    %orig;
+}
+
+%end
+
+%hook WSSCommonFileMgrSendUtil
+
+// 同步钩住 Util 版本的 sendFileCheckMode
++ (void)sendFileCheckMode:(NSInteger)checkMode deviceInfo:(id)deviceInfo fileInfo:(id)fileInfo fileid:(NSInteger)fileid offsetSize:(long long)offsetSize {
+    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileCheckMode!\n  ➤ 原始 checkMode = %ld", (long)checkMode]);
+    if (g_intercept) {
+        HWSLog(@"  ➤ ⚡ 强制将 checkMode 改为 0！");
+        %orig(0, deviceInfo, fileInfo, fileid, offsetSize);
+    } else {
+        %orig;
+    }
+}
+
+// 文件传输协商发送，errorCode 是我们反馈给手表的值
++ (void)sendFileTransferNegotiate:(id)negotiate deviceInfo:(id)deviceInfo errorCode:(NSInteger)errorCode {
+    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileTransferNegotiate!\n  ➤ errorCode = %ld", (long)errorCode]);
+    %orig;
+}
+
+%end
+
 %end
 
 %hook NSFileManager
@@ -362,9 +422,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.42: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.43: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.42] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.43] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -405,7 +465,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.42] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.43] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -810,7 +870,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.42"
+        alertControllerWithTitle:@"HAP 侧载 v4.43"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
