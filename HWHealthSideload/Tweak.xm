@@ -216,6 +216,15 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %group SideloadHooks
 
+%hook NSNotificationCenter
+- (void)postNotificationName:(NSNotificationName)aName object:(id)anObject userInfo:(NSDictionary *)aUserInfo {
+    if ([aName isEqualToString:@"notif_pushfile_update_status"]) {
+        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Stack Trace] pushFileProgress 发送方: %@\n%@", [anObject class], [NSThread callStackSymbols]]);
+    }
+    %orig;
+}
+%end
+
 %hook SHDWiFiCommandSend
 
 + (void)sendNotifiDeviceStartTransferFileWithFileInfo:(id)info {
@@ -439,10 +448,7 @@ static void replacePathAndSizeInFileInfo(id info) {
 %hook NSFileHandle
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"FH Read: %@", path.lastPathComponent]); }
-    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
-        HWSLog(@"💥 劫持 NSFileHandle!");
-        return %orig(g_hapPath);
-    }
+    // 暂时关闭替换，防止 alisec_crypto_dec 崩溃，为了抓取完美的栈
     return %orig;
 }
 %end
