@@ -399,7 +399,7 @@ static void replacePathAndSizeInFileInfo(id info) {
 
     // ====== 一次性 dump WSSCommonFileMgr 全部方法名，找 sendInstall* 方法 ======
     static dispatch_once_t methodDumpOnce;
-    Class selfClass = [self class]; // 在 block 外获取，避免 forward declaration 错误
+    Class selfClass = object_getClass(self); // 避免 forward declaration 报错
     dispatch_once(&methodDumpOnce, ^{
         unsigned int count = 0;
         Method *methods = class_copyMethodList(selfClass, &count);
