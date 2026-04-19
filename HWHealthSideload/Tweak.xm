@@ -392,16 +392,12 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %hook WSSCommonFileMgrSendUtil
 
-// 同步钩住 Util 版本的 sendFileCheckMode
+// Util 版本的 sendFileCheckMode：不改 checkMode，直接放行！
 + (void)sendFileCheckMode:(NSInteger)checkMode deviceInfo:(id)deviceInfo fileInfo:(id)fileInfo fileid:(NSInteger)fileid offsetSize:(long long)offsetSize {
-    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileCheckMode!\n  ➤ 原始 checkMode = %ld", (long)checkMode]);
-    if (g_intercept) {
-        HWSLog(@"  ➤ ⚡ 强制将 checkMode 改为 0！");
-        %orig(0, deviceInfo, fileInfo, fileid, offsetSize);
-    } else {
-        %orig;
-    }
+    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileCheckMode!\n  ➤ checkMode = %ld (直接放行，不改！)", (long)checkMode]);
+    %orig; // ← checkMode 保持原值=3，手表才不会拒绝！
 }
+
 
 // 文件传输协商发送，errorCode 是我们反馈给手表的值
 + (void)sendFileTransferNegotiate:(id)negotiate deviceInfo:(id)deviceInfo errorCode:(NSInteger)errorCode {
@@ -438,9 +434,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.45: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.46: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.45] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.46] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -481,7 +477,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.45] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.46] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -886,7 +882,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.45"
+        alertControllerWithTitle:@"HAP 侧载 v4.46"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
