@@ -34,59 +34,7 @@ static BOOL isTargetExt(NSString *path) {
     return [low containsString:@".bin"];
 }
 
-static id fixDictSizes(id obj, long long targetSize) {
-    if ([obj isKindOfClass:[NSDictionary class]]) {
-        NSMutableDictionary *m = [obj mutableCopy];
-        for (NSString *key in [m allKeys]) {
-            id val = m[key];
-            NSString *lcKey = key.lowercaseString;
-            
-            if ([lcKey isEqualToString:@"size"] || [lcKey isEqualToString:@"filesize"] || [lcKey isEqualToString:@"pkgsize"] || [lcKey isEqualToString:@"packagesize"] || [lcKey isEqualToString:@"appsize"]) {
-                if ([val isKindOfClass:[NSNumber class]] || [val isKindOfClass:[NSString class]]) {
-                    long long origSize = [val longLongValue];
-                    if (origSize > 1024) { // Only override sizes > 1KB
-                        m[key] = [NSNumber numberWithLongLong:targetSize];
-                        HWSLog([NSString stringWithFormat:@"💥 [JSON欺骗] 将云端包大小改为外挂Hap大小: %@ -> %lld", val, targetSize]);
-                    }
-                }
-            } else if ([val isKindOfClass:[NSArray class]] || [val isKindOfClass:[NSDictionary class]]) {
-                m[key] = fixDictSizes(val, targetSize);
-            }
-        }
-        return m;
-    } else if ([obj isKindOfClass:[NSArray class]]) {
-        NSMutableArray *m = [obj mutableCopy];
-        for (int i=0; i<m.count; i++) {
-            m[i] = fixDictSizes(m[i], targetSize);
-        }
-        return m;
-    }
-    return obj;
-}
-
-%hook NSJSONSerialization
-
-+ (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)opt error:(NSError **)error {
-    id res = %orig;
-    if (g_intercept && g_hapPath && res) {
-        NSString *jsonStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        if (jsonStr && ([jsonStr containsString:@".bin\""] || [jsonStr containsString:@".bin?"] || [jsonStr containsString:@".hap\""] || [jsonStr containsString:@".hap?"])) {
-            if ([jsonStr containsString:@"size"] || [jsonStr containsString:@"pkgSize"] || [jsonStr containsString:@"fileSize"]) {
-                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
-                if (attrs) {
-                    long long hapSize = [attrs fileSize];
-                    if (hapSize > 0) {
-                        HWSLog(@"💥 [JSON嗅探] 捕获纯正应用下载元数据！启动动态特权劫持...");
-                        res = fixDictSizes(res, hapSize);
-                    }
-                }
-            }
-        }
-    }
-    return res;
-}
-
-%end
+// NSJSONSerialization hook 已移除 —— 该 hook 会拦截所有 JSON 解析包括登录接口，导致账号服务异常
 
 %hook NSFileManager
 
@@ -201,7 +149,7 @@ static id fixDictSizes(id obj, long long targetSize) {
 
 %new
 - (void)hws_showMenu {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"侧载管理 (v4.28 强力劫持JSON版)" 
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"侧载管理 (v4.31 物理替换版)" 
                                                                 message:[NSString stringWithFormat:@"状态: %@\n当前包: %@", g_intercept ? @"开启" : @"关闭", g_hapPath ? g_hapPath.lastPathComponent : @"未选择"] 
                                                          preferredStyle:UIAlertControllerStyleAlert];
     
