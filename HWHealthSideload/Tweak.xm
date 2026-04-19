@@ -393,9 +393,42 @@ static void replacePathAndSizeInFileInfo(id info) {
 // 文件传输完成时调用
 - (void)finishPushFileWithType:(NSInteger)type {
     HWSLog(@"\n\n╬═══════════════════════════════╬");
-    HWSLog([NSString stringWithFormat:@"🔴🔴🔴 [WSSCommonFileMgr] 传输完成！finishPushFileWithType = %ld (0=成功, 其他=失败)", (long)type]);
+    HWSLog([NSString stringWithFormat:@"🔴🔴🔴 [WSSCommonFileMgr] 传输完成！finishPushFileWithType = %ld (type=fileID 不是错误码)", (long)type]);
     HWSLog(@"╬═══════════════════════════════╬\n");
     @try { dumpObjectProperties(self, @"FileMgr最终状态"); } @catch (...) {}
+
+    // ====== 一次性 dump WSSCommonFileMgr 全部方法名，找 sendInstall* 方法 ======
+    static dispatch_once_t methodDumpOnce;
+    dispatch_once(&methodDumpOnce, ^{
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList([self class], &count);
+        NSMutableString *allMethods = [NSMutableString stringWithFormat:@"📋 WSSCommonFileMgr 全部 %u 个方法:\n", count];
+        for (unsigned int i = 0; i < count; i++) {
+            [allMethods appendFormat:@"  · %@\n", NSStringFromSelector(method_getName(methods[i]))];
+        }
+        free(methods);
+        HWSLog(allMethods);
+    });
+
+    // ====== T+5/T+15/T+30 延时监控 isPushBusy，确认手表安装结果时机 ======
+    __weak id weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        id s = weakSelf;
+        if (s) HWSLog([NSString stringWithFormat:@"⏱ [T+5s] isPushBusy=%@", [s valueForKey:@"isPushBusy"]]);
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        id s = weakSelf;
+        if (s) HWSLog([NSString stringWithFormat:@"⏱ [T+15s] isPushBusy=%@", [s valueForKey:@"isPushBusy"]]);
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        id s = weakSelf;
+        if (s) HWSLog([NSString stringWithFormat:@"⏱ [T+30s] isPushBusy=%@", [s valueForKey:@"isPushBusy"]]);
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 35 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        id s = weakSelf;
+        if (s) HWSLog([NSString stringWithFormat:@"⏱ [T+35s] isPushBusy=%@ ← 最终状态", [s valueForKey:@"isPushBusy"]]);
+    });
+
     %orig;
 }
 
@@ -404,6 +437,7 @@ static void replacePathAndSizeInFileInfo(id info) {
     HWSLog(@"\n🟡 [WSSCommonFileMgr] pausedTransferFile 被调用！传输已暂停");
     %orig;
 }
+
 
 // 开始发送文件内容 — 这是确认数据传输开始的关键方法！
 - (void)sendFileContentToDeviceWithDataInfo:(id)dataInfo {
@@ -505,9 +539,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.51: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.52: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.51] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.52] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -539,10 +573,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 }
                 free(classes);
                 // 只打印总数，不打印每个方法（避免几百行噪音）
-                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.51] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.52] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.51] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.52] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -693,12 +727,22 @@ static BOOL g_jsonHookActive = NO; // 重入保护，防止 hook 内调用 JSON 
 
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadFile: %@", path.lastPathComponent]); }
+    
+    // 🔑 关键：捕获 .cer 证书读取的调用栈，找出华为的证书验证函数！
+    if (g_intercept && [path hasSuffix:@".cer"]) {
+        NSArray *stack = [NSThread callStackSymbols];
+        NSArray *top = [stack subarrayWithRange:NSMakeRange(0, MIN(12, stack.count))];
+        HWSLog([NSString stringWithFormat:@"🔬 [CertRead 调用栈] 读取: %@\n%@",
+            path.lastPathComponent, [top componentsJoinedByString:@"\n"]]);
+    }
+    
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
         HWSLog(@"💥 劫持 Data ReadFile!");
         return %orig(g_hapPath);
     }
     return %orig;
 }
+
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
     if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadURL: %@", url.lastPathComponent]); }
@@ -952,7 +996,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.51"
+        alertControllerWithTitle:@"HAP 侧载 v4.52"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
