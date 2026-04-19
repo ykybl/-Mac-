@@ -268,56 +268,16 @@ static void dumpObjectProperties(id obj, NSString *tag) {
     // v4.19: 只要开启劫持，不论选没选 HAP，只要看到 .bin 就开始全宇宙搜寻底层接口
     if (g_intercept && isTargetExt(dstU.path)) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
-        
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.19] 开始全宇宙深度搜索蓝牙/P2P传输接口 ======");
-                
-                NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2p", @"ble", @"ota", @"bluetooth"];
-                
-                int n = objc_getClassList(NULL, 0);
-                Class *classes = (Class *)malloc(sizeof(Class) * n);
-                objc_getClassList(classes, n);
-                
-                for (int i = 0; i < n; i++) {
-                    NSString *clsName = NSStringFromClass(classes[i]);
-                    if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) continue;
-                    
-                    unsigned int count = 0;
-                    Method *methods = class_copyMethodList(classes[i], &count);
-                    for (unsigned int m = 0; m < count; m++) {
-                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
-                        for (NSString *kw in mKws) {
-                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
-                                HWSLog([NSString stringWithFormat:@"🎯🎯 捕获方法: -[%@ %@]", clsName, mName]);
-                                break;
-                            }
-                        }
-                    }
-                    if (methods) free(methods);
-                    
-                    methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
-                    for (unsigned int m = 0; m < count; m++) {
-                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
-                        for (NSString *kw in mKws) {
-                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
-                                HWSLog([NSString stringWithFormat:@"🎯🎯 捕获方法: +[%@ %@]", clsName, mName]);
-                                break;
-                            }
-                        }
-                    }
-                    if (methods) free(methods);
-                }
-                free(classes);
-                HWSLog(@"🎯🎯🎯 ====== 全宇宙扫描完成，请查看上方 [🎯🎯] 标记的方法 ======\n\n");
-            });
+            // v4.22: 移除全宇宙扫描，防止 5000 行日志被 tableView 冲刷掉核心日志
+            HWSLog(@"\n======== [v4.22] 触发底层传输 ========");
             
-            // v4.21: 延迟初始化动态 Hook，确保类已经加载到内存中
+            // 延迟初始化动态 Hook，确保类已经加载到内存中
             Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
             Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
             if (wifiCls || storeCls) {
-                HWSLog(@"✅ 成功获取动态类句柄，正在注入底层协议拦截器！");
+                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d，正在注入底层协议拦截器！", (wifiCls != nil), (storeCls != nil)]);
                 %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls);
             } else {
                 HWSLog(@"❌ 获取动态类句柄失败，类名尚未注册。");
