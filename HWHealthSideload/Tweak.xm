@@ -362,9 +362,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.39: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.40: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.39] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.40] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -405,7 +405,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.39] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.40] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -490,7 +490,18 @@ static id replaceTargetJson(id obj, long long hapSize) {
     if (g_intercept && orig && g_hapPath) {
         @try {
             if (hasBinUrl(orig)) {
-                HWSLog(@"💥 [核弹级伪装] 发现下载 JSON Payload！执行全局源数据伪装！");
+                HWSLog(@"💥 [核弹级伪装] 发现下载 JSON Payload！准备执行全局源数据伪装！");
+                
+                // 【核心调试指令】输出原始 JSON 结构，用于分析隐藏的参数键名
+                // 因为 NSDictionary 结构庞大，此处仅将其转为漂亮的 JSON 字符串输出
+                if ([NSJSONSerialization isValidJSONObject:orig]) {
+                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:orig options:NSJSONWritingPrettyPrinted error:nil];
+                    if (jsonData) {
+                        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                        HWSLog([NSString stringWithFormat:@"\n=== [JSON DUMP START] ===\n%@\n=== [JSON DUMP END] ===", jsonStr]);
+                    }
+                }
+                
                 NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
                 long long hapSize = attrs ? [attrs fileSize] : 0;
                 orig = replaceTargetJson(orig, hapSize);
@@ -783,7 +794,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.39"
+        alertControllerWithTitle:@"HAP 侧载 v4.40"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
