@@ -157,6 +157,11 @@ static id fixDictSizes(id obj, long long targetSize) {
 // ============================================================================
 // Core UI Injection
 // ============================================================================
+@interface UIViewController (HWSSideload)
+- (void)hws_showMenu;
+- (void)hws_drag:(UIPanGestureRecognizer *)pan;
+@end
+
 %hook UIViewController
 
 - (void)viewDidLoad {
