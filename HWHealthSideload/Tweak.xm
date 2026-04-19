@@ -338,9 +338,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.36: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.37: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.36] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.37] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -381,7 +381,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.36] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.37] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -389,6 +389,79 @@ static void replacePathAndSizeInFileInfo(id info) {
         return %orig;
     }
     return %orig;
+}
+
+%end
+
+static BOOL hasBinUrl(id obj) {
+    if ([obj isKindOfClass:[NSString class]]) {
+        return [(NSString *)obj containsString:@".bin"] || [(NSString *)obj containsString:@".hap"] || [(NSString *)obj containsString:@".pkg"];
+    } else if ([obj isKindOfClass:[NSDictionary class]]) {
+        for (id v in [(NSDictionary *)obj allValues]) {
+            if (hasBinUrl(v)) return YES;
+        }
+    } else if ([obj isKindOfClass:[NSArray class]]) {
+        for (id v in (NSArray *)obj) {
+            if (hasBinUrl(v)) return YES;
+        }
+    }
+    return NO;
+}
+
+static id replaceTargetJson(id obj, long long hapSize) {
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *m = [NSMutableDictionary dictionary];
+        for (NSString *k in (NSDictionary *)obj) {
+            NSString *lk = k.lowercaseString;
+            id val = [(NSDictionary *)obj objectForKey:k];
+            
+            if (hapSize > 0 && 
+                ([lk isEqualToString:@"size"] || [lk isEqualToString:@"filesize"] || [lk isEqualToString:@"apksize"] || [lk isEqualToString:@"appsize"]) 
+                && [val isKindOfClass:[NSNumber class]]) {
+                HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 size: %@ -> %lld", val, hapSize]);
+                m[k] = @(hapSize);
+            } else if (g_hapChecksum && g_hapChecksum.length > 0 && 
+                       ([lk isEqualToString:@"hash"] || [lk isEqualToString:@"sha256"] || [lk isEqualToString:@"digest"] || [lk isEqualToString:@"filehash"]) 
+                       && [val isKindOfClass:[NSString class]]) {
+                HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 hash: %@ -> %@", val, g_hapChecksum]);
+                m[k] = g_hapChecksum;
+            } else if (g_hapBundleID && g_hapBundleID.length > 0 && 
+                       ([lk isEqualToString:@"package"] || [lk isEqualToString:@"packagename"] || [lk isEqualToString:@"bundle"] || [lk isEqualToString:@"bundlename"] || [lk isEqualToString:@"appid"] || [lk isEqualToString:@"appname"]) 
+                       && [val isKindOfClass:[NSString class]]) {
+                HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 bundle: %@ -> %@", val, g_hapBundleID]);
+                m[k] = g_hapBundleID;
+            } else {
+                m[k] = replaceTargetJson(val, hapSize);
+            }
+        }
+        return m;
+    } else if ([obj isKindOfClass:[NSArray class]]) {
+        NSMutableArray *m = [NSMutableArray array];
+        for (id item in (NSArray *)obj) {
+            [m addObject:replaceTargetJson(item, hapSize)];
+        }
+        return m;
+    }
+    return obj;
+}
+
+%hook NSJSONSerialization
+
++ (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)opt error:(NSError **)error {
+    id orig = %orig;
+    if (g_intercept && orig && g_hapPath) {
+        @try {
+            if (hasBinUrl(orig)) {
+                HWSLog(@"💥 [核弹级伪装] 发现下载 JSON Payload！执行全局源数据伪装！");
+                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+                long long hapSize = attrs ? [attrs fileSize] : 0;
+                orig = replaceTargetJson(orig, hapSize);
+            }
+        } @catch (NSException *e) {
+            HWSLog([NSString stringWithFormat:@"❌ JSON 修改异常: %@", e]);
+        }
+    }
+    return orig;
 }
 
 %end
@@ -672,7 +745,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.36"
+        alertControllerWithTitle:@"HAP 侧载 v4.37"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
