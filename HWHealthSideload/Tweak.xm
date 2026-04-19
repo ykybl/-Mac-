@@ -279,21 +279,33 @@ static void replacePathAndSizeInFileInfo(id info) {
                 dumpObjectProperties(statusInfo, @"statusInfo Initial Object State");
             });
             
-            // 每次都打印 errorCode 和 currentStatus，以便实时监测手表错误反馈
+            // 只在 status 或 errorCode 发生变化时才打印，避免每个传输块都刷满日志
+            static NSInteger lastStatus = -1;
+            static NSInteger lastErrCode = -1;
+            static NSInteger lastProgress25 = -1; // 每25%打一次
             @try {
-                id errCode = [statusInfo valueForKey:@"errorCode"];
-                id curStatus = [statusInfo valueForKey:@"currentStatus"];
-                id errAttach = [statusInfo valueForKey:@"errAttachment"];
-                id progress  = [statusInfo valueForKey:@"progress"];
-                if (errCode || curStatus) {
-                    HWSLog([NSString stringWithFormat:@"  📌 statusInfo实时 -> status=%@ progress=%@ errorCode=%@ errAttach=%@",
-                        curStatus, progress, errCode, errAttach]);
+                NSInteger curStatus = [[statusInfo valueForKey:@"currentStatus"] integerValue];
+                NSInteger curErrCode = [[statusInfo valueForKey:@"errorCode"] integerValue];
+                NSInteger curProgress = [[statusInfo valueForKey:@"progress"] integerValue];
+                NSInteger progBucket = curProgress / 25; // 0,25,50,75,100
+                
+                BOOL statusChanged  = (curStatus != lastStatus);
+                BOOL errCodeChanged = (curErrCode != lastErrCode);
+                BOOL progressMilestone = (progBucket != lastProgress25);
+                
+                if (statusChanged || errCodeChanged || progressMilestone) {
+                    id errAttach = [statusInfo valueForKey:@"errAttachment"];
+                    HWSLog([NSString stringWithFormat:@"  📌 statusInfo变化 -> status=%ld progress=%ld errorCode=%ld errAttach=%@",
+                        (long)curStatus, (long)curProgress, (long)curErrCode, errAttach]);
+                    lastStatus = curStatus;
+                    lastErrCode = curErrCode;
+                    lastProgress25 = progBucket;
                 }
             } @catch (NSException *e) {}
             
             replacePathAndSizeInFileInfo(statusInfo);
         }
-        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Hook Hit] pushFileProgress: \nName: %@ \nUserInfo: %@", aName, aUserInfo]);
+        // 不再打印 userInfo 全内容（太占空间）
         %orig;
         return;
     }
@@ -338,16 +350,10 @@ static void replacePathAndSizeInFileInfo(id info) {
 %end
 
 %hook SHWatchAppStoreManager
-
 - (void)pushFileProgress:(NSNotification *)notification {
-    if ([notification isKindOfClass:[NSNotification class]]) { // Ensure it's not a generic raw object
-        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Hook Hit] pushFileProgress: \nName: %@ \nUserInfo: %@", notification.name, notification.userInfo]);
-    } else {
-        HWSLog(@"\n🚀🚀 [Hook Hit] pushFileProgress (Not an NSNotification)");
-    }
+    // 已在 NSNotificationCenter hook 里处理，这里不再重复打印（避免每块打两条）
     %orig;
 }
-
 %end
 
 // ============================================================================
@@ -400,15 +406,26 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 // 手表返回数据时调用，commondID 里可能携带了错误码
 - (void)recevicedPushFileData:(NSData *)data commondID:(NSInteger)commondID deviceIdentify:(NSString *)deviceIdentify {
-    // 将原始字节转为 hex，这是解密手表回应的关键证据
-    NSMutableString *hexStr = [NSMutableString string];
     const uint8_t *bytes = (const uint8_t*)data.bytes;
-    for (NSUInteger i = 0; i < data.length; i++) {
-        [hexStr appendFormat:@"%02X ", bytes[i]];
+    NSUInteger len = data.length;
+    
+    if (commondID == 5) {
+        // commondID=5 是数据块ACK，每20块打一次，避免57条噪音
+        static NSInteger chunk5count = 0;
+        chunk5count++;
+        if (chunk5count == 1 || chunk5count % 20 == 0) {
+            uint32_t offset = (len >= 9) ? ((bytes[5]<<24)|(bytes[6]<<16)|(bytes[7]<<8)|bytes[8]) : 0;
+            HWSLog([NSString stringWithFormat:@"\n🔵 [commondID=5] 块ACK #%ld offset=%u字节 (每20块记录一次)", (long)chunk5count, offset]);
+        }
+    } else {
+        // 非5的 commondID（协商/错误/完成）全部打印带HEX
+        NSMutableString *hexStr = [NSMutableString string];
+        for (NSUInteger i = 0; i < len; i++) [hexStr appendFormat:@"%02X ", bytes[i]];
+        HWSLog([NSString stringWithFormat:@"\n🔵 [WSSCommonFileMgr] recevicedPushFileData:\n  ➤ commondID = %ld, dataLen = %lu\n  ➤ RAW HEX: [%@]", (long)commondID, (unsigned long)len, hexStr]);
     }
-    HWSLog([NSString stringWithFormat:@"\n🔵 [WSSCommonFileMgr] recevicedPushFileData:\n  ➤ commondID = %ld, dataLen = %lu\n  ➤ RAW HEX: [%@]", (long)commondID, (unsigned long)data.length, hexStr]);
     %orig;
 }
+
 
 %end
 
@@ -467,9 +484,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.49: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.50: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.49] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.50] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -501,10 +518,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 }
                 free(classes);
                 // 只打印总数，不打印每个方法（避免几百行噪音）
-                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.49] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.50] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.49] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.50] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -914,7 +931,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.49"
+        alertControllerWithTitle:@"HAP 侧载 v4.50"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
@@ -949,9 +966,9 @@ static NSString *dumpTargetClasses() {
         style:UIAlertActionStyleDefault handler:^(id a) {
         NSString *logStr = @"暂无监控日志。请先[开启劫持]并去市场安装。";
         if (g_logs && g_logs.count > 0) {
-            // ⚡ 关键：只复制最后 150 条，确保看到传输末尾的失败信息！
+            // 只复制最后 300 条，确保看到传输终止的失败信息
             NSUInteger total = g_logs.count;
-            NSUInteger start = total > 150 ? total - 150 : 0;
+            NSUInteger start = total > 300 ? total - 300 : 0;
             NSArray *recent = [g_logs subarrayWithRange:NSMakeRange(start, total - start)];
             logStr = [recent componentsJoinedByString:@"\n"];
         }
