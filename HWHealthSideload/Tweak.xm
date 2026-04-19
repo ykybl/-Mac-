@@ -794,17 +794,6 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
     %init(_ungrouped);
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
     
-    // 尽早初始化动态类 Hook，以防竞争条件漏截
-    Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
-    Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
-    Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
-    if (wifiCls || storeCls || cmdCls) {
-        NSLog(@"[HWSideload] ✅ 成功早期获取动态类句柄: WiFi:%d Store:%d Cmd:%d，正在注入！", (wifiCls != nil), (storeCls != nil), (cmdCls != nil));
-        %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
-    } else {
-        NSLog(@"[HWSideload] ❌ 早期获取动态类句柄失败，类可能尚未加载。");
-    }
-
     dispatch_async(dispatch_get_main_queue(), ^{
         struct rebinding rb[1];
         rb[0].name = "SecCodeCheckValidity";
@@ -815,12 +804,15 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
         CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
             appDidBecomeActive, (CFStringRef)UIApplicationDidBecomeActiveNotification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
             
-        // 保底：如果在 block 里类才加载好，再执行一次 (Logos 多次 %init 是安全的)
-        Class wifiCls_late = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
-        Class storeCls_late = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
-        Class cmdCls_late = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
-        if (wifiCls_late || storeCls_late || cmdCls_late) {
-            %init(SideloadHooks, SHDWiFiTransferManager=wifiCls_late, SHWatchAppStoreManager=storeCls_late, SHDWiFiCommandSend=cmdCls_late);
+        // 只能调用一次 %init，所以在主队列 block 里执行以确保类已加载
+        Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
+        Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
+        Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
+        if (wifiCls || storeCls || cmdCls) {
+            NSLog(@"[HWSideload] ✅ 成功全局获取动态类句柄!");
+            %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
+        } else {
+            NSLog(@"[HWSideload] ❌ 获取动态类句柄失败!");
         }
     });
 }
