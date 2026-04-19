@@ -11,6 +11,8 @@
 static NSString *g_hapPath = nil;
 static NSString *g_hapBundleID = nil;
 static NSString *g_hapChecksum = nil;
+static NSString *g_hapMD5 = nil;
+static NSString *g_hapSHA1 = nil;
 static BOOL     g_intercept = NO;
 
 // ============================================================================
@@ -40,6 +42,28 @@ static NSString *fileSHA256(NSString *path) {
     CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
     NSMutableString *output = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
     for(int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++)
+        [output appendFormat:@"%02x", digest[i]];
+    return output;
+}
+
+static NSString *fileMD5(NSString *path) {
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data) return nil;
+    uint8_t digest[CC_MD5_DIGEST_LENGTH];
+    CC_MD5(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *output = [NSMutableString stringWithCapacity:CC_MD5_DIGEST_LENGTH * 2];
+    for(int i = 0; i < CC_MD5_DIGEST_LENGTH; i++)
+        [output appendFormat:@"%02x", digest[i]];
+    return output;
+}
+
+static NSString *fileSHA1(NSString *path) {
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data) return nil;
+    uint8_t digest[CC_SHA1_DIGEST_LENGTH];
+    CC_SHA1(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *output = [NSMutableString stringWithCapacity:CC_SHA1_DIGEST_LENGTH * 2];
+    for(int i = 0; i < CC_SHA1_DIGEST_LENGTH; i++)
         [output appendFormat:@"%02x", digest[i]];
     return output;
 }
@@ -338,9 +362,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.38: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.39: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.38] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.39] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -381,7 +405,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.38] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.39] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -420,11 +444,22 @@ static id replaceTargetJson(id obj, long long hapSize) {
                 && [val isKindOfClass:[NSNumber class]]) {
                 HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 size: %@ -> %lld", val, hapSize]);
                 m[k] = @(hapSize);
-            } else if (g_hapChecksum && g_hapChecksum.length > 0 && 
+            } else if ((g_hapChecksum || g_hapMD5) && 
                        ([lk isEqualToString:@"hash"] || [lk isEqualToString:@"sha256"] || [lk isEqualToString:@"digest"] || [lk isEqualToString:@"filehash"] || [lk isEqualToString:@"shash"]) 
                        && [val isKindOfClass:[NSString class]]) {
-                HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 hash: %@ -> %@", val, g_hapChecksum]);
-                m[k] = g_hapChecksum;
+                if ([(NSString *)val length] == 32 && g_hapMD5) {
+                    HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 MD5 hash: %@ -> %@", val, g_hapMD5]);
+                    m[k] = g_hapMD5;
+                } else if ([(NSString *)val length] == 40 && g_hapSHA1) {
+                    HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 SHA1 hash: %@ -> %@", val, g_hapSHA1]);
+                    m[k] = g_hapSHA1;
+                } else if ([(NSString *)val length] == 64 && g_hapChecksum) {
+                    HWSLog([NSString stringWithFormat:@"✨ 动态劫持 JSON 里的 SHA256 hash: %@ -> %@", val, g_hapChecksum]);
+                    m[k] = g_hapChecksum;
+                } else {
+                    HWSLog([NSString stringWithFormat:@"✨ 默认劫持 JSON 里的 hash: %@ -> %@", val, g_hapChecksum]);
+                    m[k] = g_hapChecksum;
+                }
             } else if (g_hapBundleID && g_hapBundleID.length > 0 && 
                        ([lk isEqualToString:@"package"] || [lk isEqualToString:@"packagename"] || [lk isEqualToString:@"bundle"] || [lk isEqualToString:@"bundlename"]) 
                        && [val isKindOfClass:[NSString class]]) {
@@ -748,7 +783,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.38"
+        alertControllerWithTitle:@"HAP 侧载 v4.39"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
@@ -825,6 +860,8 @@ static NSString *dumpTargetClasses() {
     if (!err) {
         g_hapPath = [dst copy];
         g_hapChecksum = fileSHA256(g_hapPath);
+        g_hapMD5 = fileMD5(g_hapPath);
+        g_hapSHA1 = fileSHA1(g_hapPath);
         NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
         unsigned long long sz = [at fileSize];
         
