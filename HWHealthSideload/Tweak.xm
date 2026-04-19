@@ -248,7 +248,15 @@ static void replacePathAndSizeInFileInfo(id info) {
 %hook NSNotificationCenter
 - (void)postNotificationName:(NSNotificationName)aName object:(id)anObject userInfo:(NSDictionary *)aUserInfo {
     if ([aName isEqualToString:@"notif_pushfile_update_status"]) {
-        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Stack Trace] pushFileProgress 发送方: %@\n%@", [anObject class], [NSThread callStackSymbols]]);
+        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Hook Hit] pushFileProgress 被拦截！"]);
+        id statusInfo = aUserInfo[@"statusInfo"];
+        if (statusInfo) {
+            static dispatch_once_t onceTokenDump;
+            dispatch_once(&onceTokenDump, ^{
+                dumpObjectProperties(statusInfo, @"statusInfo Initial Object State");
+            });
+            replacePathAndSizeInFileInfo(statusInfo);
+        }
     }
     %orig;
 }
@@ -330,9 +338,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.35: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.36: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.35] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.36] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -373,7 +381,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.35] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.36] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -664,7 +672,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.35"
+        alertControllerWithTitle:@"HAP 侧载 v4.36"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
@@ -825,6 +833,7 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
         Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
         if (wifiCls || storeCls || cmdCls) {
             NSLog(@"[HWSideload] ✅ 成功全局获取动态类句柄!");
+            HWSLog(dumpTargetClasses());
             %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
         } else {
             NSLog(@"[HWSideload] ❌ 获取动态类句柄失败!");
