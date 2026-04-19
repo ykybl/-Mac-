@@ -362,9 +362,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.41: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.42: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.41] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.42] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -405,7 +405,7 @@ static void replacePathAndSizeInFileInfo(id info) {
                 HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
             });
 
-            HWSLog(@"\n======== [v4.41] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.42] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -417,16 +417,31 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %end
 
-static BOOL hasBinUrl(id obj) {
-    if ([obj isKindOfClass:[NSString class]]) {
-        return [(NSString *)obj containsString:@".bin"] || [(NSString *)obj containsString:@".hap"] || [(NSString *)obj containsString:@".pkg"];
+// 精准匹配：只有字典里同时存在 packageName（或 package）且 hashValue（或 hash）
+// 才说明这是华为 AppGallery 下发的安装指令包，避免误触状态通知 JSON
+static BOOL isInstallCommandDict(id obj) {
+    if (![obj isKindOfClass:[NSDictionary class]]) return NO;
+    NSDictionary *d = (NSDictionary *)obj;
+    BOOL hasPkg  = NO;
+    BOOL hasHash = NO;
+    for (NSString *k in d) {
+        NSString *lk = k.lowercaseString;
+        if ([lk isEqualToString:@"packagename"] || [lk isEqualToString:@"package"]) hasPkg = YES;
+        if ([lk isEqualToString:@"hashvalue"] || [lk isEqualToString:@"hash"] || [lk isEqualToString:@"sha256"] || [lk isEqualToString:@"digest"]) hasHash = YES;
+    }
+    return hasPkg && hasHash;
+}
+
+// 递归检查数组 / 嵌套字典里是否存在安装指令
+static BOOL containsInstallCommand(id obj) {
+    if (isInstallCommandDict(obj)) return YES;
+    if ([obj isKindOfClass:[NSArray class]]) {
+        for (id item in (NSArray *)obj) {
+            if (containsInstallCommand(item)) return YES;
+        }
     } else if ([obj isKindOfClass:[NSDictionary class]]) {
         for (id v in [(NSDictionary *)obj allValues]) {
-            if (hasBinUrl(v)) return YES;
-        }
-    } else if ([obj isKindOfClass:[NSArray class]]) {
-        for (id v in (NSArray *)obj) {
-            if (hasBinUrl(v)) return YES;
+            if (containsInstallCommand(v)) return YES;
         }
     }
     return NO;
@@ -483,30 +498,31 @@ static id replaceTargetJson(id obj, long long hapSize) {
     return obj;
 }
 
+static BOOL g_jsonHookActive = NO; // 重入保护，防止 hook 内调用 JSON 引发递归
+
 %hook NSJSONSerialization
 
 + (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)opt error:(NSError **)error {
     id orig = %orig;
-    if (g_intercept && orig && g_hapPath) {
+    if (g_intercept && orig && g_hapPath && !g_jsonHookActive) {
         @try {
-            if (hasBinUrl(orig)) {
-                HWSLog(@"💥 [核弹级伪装] 发现下载 JSON Payload！准备执行全局源数据伪装！");
+            // 精准命中：只处理同时拥有 packageName + hashValue 的安装指令字典
+            if (containsInstallCommand(orig)) {
+                g_jsonHookActive = YES; // 开启重入锁，防止后面的序列化操作再次进入此 Hook
+                HWSLog(@"💥 [核弹级伪装] 命中安装指令 JSON！执行外科手术级伪装...");
                 
-                // 【核心调试指令】输出原始 JSON 结构，用于分析隐藏的参数键名
-                // 因为 NSDictionary 结构庞大，此处仅将其转为漂亮的 JSON 字符串输出
-                if ([NSJSONSerialization isValidJSONObject:orig]) {
-                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:orig options:NSJSONWritingPrettyPrinted error:nil];
-                    if (jsonData) {
-                        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-                        HWSLog([NSString stringWithFormat:@"\n=== [JSON DUMP START] ===\n%@\n=== [JSON DUMP END] ===", jsonStr]);
-                    }
-                }
+                // 打印原始协议（用 NSString 描述，不再调用 NSJSONSerialization 避免递归）
+                HWSLog([NSString stringWithFormat:@"[原始协议] %@", orig]);
                 
                 NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
                 long long hapSize = attrs ? [attrs fileSize] : 0;
                 orig = replaceTargetJson(orig, hapSize);
+                
+                HWSLog([NSString stringWithFormat:@"[伪装后协议] %@", orig]);
+                g_jsonHookActive = NO;
             }
         } @catch (NSException *e) {
+            g_jsonHookActive = NO;
             HWSLog([NSString stringWithFormat:@"❌ JSON 修改异常: %@", e]);
         }
     }
@@ -794,7 +810,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.41"
+        alertControllerWithTitle:@"HAP 侧载 v4.42"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
