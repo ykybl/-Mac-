@@ -423,17 +423,12 @@ static void replacePathAndSizeInFileInfo(id info) {
 - (NSDictionary *)attributesOfItemAtPath:(NSString *)path error:(NSError **)err {
     NSDictionary *origAttrs = %orig;
     if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
-        NSString *stack = [[NSThread callStackSymbols] componentsJoinedByString:@"\n"];
-        if (![stack containsString:@"alisec_"] && ![stack containsString:@"Security"]) {
-            NSDictionary *hapAttrs = %orig(g_hapPath, nil);
-            if (hapAttrs && origAttrs) {
-                NSMutableDictionary *newAttrs = [origAttrs mutableCopy];
-                newAttrs[NSFileSize] = hapAttrs[NSFileSize];
-                HWSLog([NSString stringWithFormat:@"💥 [尺寸欺骗] 将 .bin 伪装为 .hap 大小: %@ -> %@", origAttrs[NSFileSize], hapAttrs[NSFileSize]]);
-                return newAttrs;
-            }
-        } else {
-            HWSLog(@"🛡️ [DRM 嗅探] 阿里安全模块正在获取大小，放行真实 .bin 尺寸!");
+        NSDictionary *hapAttrs = %orig(g_hapPath, nil);
+        if (hapAttrs && origAttrs) {
+            NSMutableDictionary *newAttrs = [origAttrs mutableCopy];
+            newAttrs[NSFileSize] = hapAttrs[NSFileSize];
+            HWSLog([NSString stringWithFormat:@"💥 [系统欺骗] 将 .bin 伪装为 .hap 大小: %@ -> %@", origAttrs[NSFileSize], hapAttrs[NSFileSize]]);
+            return newAttrs;
         }
     }
     return origAttrs;
@@ -444,14 +439,8 @@ static void replacePathAndSizeInFileInfo(id info) {
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
     if (g_intercept && isTargetExt(path)) { 
         if (g_hapPath && ![path isEqualToString:g_hapPath]) {
-            NSString *stack = [[NSThread callStackSymbols] componentsJoinedByString:@"\n"];
-            if ([stack containsString:@"alisec_"] || [stack containsString:@"Security"]) {
-                HWSLog(@"🛡️ [DRM 嗅探] 阿里安全模块正在扫描，放行读取物理 .bin!");
-                return %orig(path);
-            } else {
-                HWSLog(@"💥 [传输嗅探] 底层模块拉取数据，狸猫换太子，喂入外挂 .hap 数据流! 🎯");
-                return %orig(g_hapPath);
-            }
+            HWSLog([NSString stringWithFormat:@"💥 [底层流欺骗] C++ 引擎请求文件流，狸猫换太子，返回外挂 .hap!"]);
+            return %orig(g_hapPath);
         }
     }
     return %orig;
