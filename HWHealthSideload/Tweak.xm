@@ -1,253 +1,750 @@
 #import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
+#import <fishhook.h>
+#import <Security/Security.h>
 
-// ============================================================
-// 全局状态
-// ============================================================
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunused-variable"
+
+static NSString *g_hapPath = nil;
 static BOOL     g_intercept = NO;
-static NSString *g_hapPath  = nil;
 
-// ============================================================
-// 日志工具
-// ============================================================
+// ============================================================================
+// Part 0: Log Collector
+// ============================================================================
+
+static NSMutableArray *g_logs = nil;
 static void HWSLog(NSString *msg) {
-    if (!msg) return;
-    NSLog(@"[HWHealthSideload] %@", msg);
-    NSString *logFile = [NSTemporaryDirectory() stringByAppendingPathComponent:@"HWHealthSideload.log"];
-    NSDateFormatter *df = [NSDateFormatter new];
-    [df setDateFormat:@"[aah:mm:ss.SSS] "];
-    NSString *line = [[df stringFromDate:[NSDate date]] stringByAppendingFormat:@"%@\n", msg];
-    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:logFile];
-    if (fh) {
-        [fh seekToEndOfFile];
-        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [fh closeFile];
+    if (!g_logs) g_logs = [NSMutableArray new];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSDateFormatter *df = [NSDateFormatter new];
+        [df setDateFormat:@"HH:mm:ss.SSS"];
+        NSString *ts = [df stringFromDate:[NSDate date]];
+        [g_logs addObject:[NSString stringWithFormat:@"[%@] %@", ts, msg]];
+        if (g_logs.count > 5000) [g_logs removeObjectAtIndex:0];
+    });
+}
+
+// ============================================================================
+// Part 1: 环境检测绕过
+// ============================================================================
+
+typedef OSStatus (*SecCodeCheckValidity_func)(void *code, uint32_t flags, void *req);
+static SecCodeCheckValidity_func orig_SecCodeCheckValidity;
+static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
+    return 0; // errSecSuccess
+}
+
+// ============================================================================
+// Part 2: 网络层 Bundle ID 注入 (精准伪装，不影响内部路由)
+// ============================================================================
+
+// 在所有向外发出的 HTTP 请求中，将包含真实 Bundle ID 信息的头部
+// 替换成官方 Bundle ID，欺骗服务器鉴权。同时绝不影响 App 内部查询。
+
+static NSString *g_realBundleId = nil;
+
+// ---- 核心替换函数：安全替换字符串中的 Bundle ID ----
+static NSString *sanitizeString(NSString *str) {
+    if (!g_realBundleId || !str) return str;
+    if ([g_realBundleId isEqualToString:@"com.huawei.iossporthealth"]) return str;
+    if ([str containsString:g_realBundleId]) {
+        return [str stringByReplacingOccurrencesOfString:g_realBundleId 
+                                              withString:@"com.huawei.iossporthealth"];
+    }
+    return str;
+}
+
+%hook NSMutableURLRequest
+
+- (instancetype)initWithURL:(NSURL *)URL {
+    if (!URL) return %orig;
+    NSString *uStr = URL.absoluteString;
+    NSString *fixed = sanitizeString(uStr);
+    if (![uStr isEqualToString:fixed]) {
+        return %orig([NSURL URLWithString:fixed]);
+    }
+    return %orig;
+}
+
+- (instancetype)initWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
+    if (!URL) return %orig;
+    NSString *uStr = URL.absoluteString;
+    NSString *fixed = sanitizeString(uStr);
+    if (![uStr isEqualToString:fixed]) {
+        return %orig([NSURL URLWithString:fixed], cachePolicy, timeoutInterval);
+    }
+    return %orig;
+}
+
+- (void)setURL:(NSURL *)URL {
+    if (!URL) { %orig; return; }
+    NSString *uStr = URL.absoluteString;
+    NSString *fixed = sanitizeString(uStr);
+    if (![uStr isEqualToString:fixed]) {
+        HWSLog([NSString stringWithFormat:@"🔐 URL Setter Replaced: %@", URL.host]);
+        %orig([NSURL URLWithString:fixed]);
     } else {
-        [line writeToFile:logFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        %orig;
     }
 }
 
-// ============================================================
-// 工具：判断目标路径是否是需要劫持的 .bin 文件
-// ============================================================
-static BOOL isTargetBin(NSString *path) {
-    if (!path) return NO;
-    return [path.lowercaseString containsString:@".bin"];
+- (void)setValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
+    NSString *fixed = sanitizeString(value);
+    if (value && ![value isEqualToString:fixed]) {
+        HWSLog([NSString stringWithFormat:@"🔐 Header Setter Replaced: %@", field]);
+    }
+    %orig(fixed, field);
 }
 
-// ============================================================
-// Hook NSFileManager —— 拦截物理文件 复制/移动
-// ============================================================
+- (void)addValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
+    NSString *fixed = sanitizeString(value);
+    if (value && ![value isEqualToString:fixed]) {
+        HWSLog([NSString stringWithFormat:@"🔐 Header Add Replaced: %@", field]);
+    }
+    %orig(fixed, field);
+}
+
+- (void)setAllHTTPHeaderFields:(NSDictionary *)fields {
+    if (!fields) { %orig; return; }
+    NSMutableDictionary *fixed = [fields mutableCopy];
+    BOOL changed = NO;
+    for (NSString *k in fields) {
+        NSString *v = fields[k];
+        if ([v isKindOfClass:[NSString class]]) {
+            NSString *fv = sanitizeString(v);
+            if (![v isEqualToString:fv]) {
+                fixed[k] = fv;
+                changed = YES;
+            }
+        }
+    }
+    if (changed) HWSLog(@"🔐 AllHeaders Replaced");
+    %orig(changed ? fixed : fields);
+}
+
+- (void)setHTTPBody:(NSData *)data {
+    if (data && g_realBundleId && data.length < 65536) {
+        NSString *bs = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (bs) {
+            NSString *fixed = sanitizeString(bs);
+            if (![bs isEqualToString:fixed]) {
+                HWSLog(@"🔐 Body Setter Replaced");
+                %orig([fixed dataUsingEncoding:NSUTF8StringEncoding]);
+                return;
+            }
+        }
+    }
+    %orig;
+}
+
+%end
+
+// ============================================================================
+// Part 3: NSFileManager & NSData & NSURLSession 拦截 (侧载核心逻辑)
+// ============================================================================
+
+static BOOL isTargetExt(NSString *path) {
+    if (!path) return NO;
+    NSString *low = path.lowercaseString;
+    return [low containsString:@".hap"] || [low containsString:@".pkg"] || [low containsString:@".bin"];
+}
+
+// ============================================================================
+// Part 3.5: Dynamic Transfer Hooking (SideloadHooks)
+// ============================================================================
+
+static void dumpObjectProperties(id obj, NSString *tag) {
+    if (!obj) {
+        HWSLog([NSString stringWithFormat:@"[Object Dump: %@] Object is nil", tag]);
+        return;
+    }
+    NSMutableString *str = [NSMutableString stringWithFormat:@"\n=== [Object Dump: %@] ===\nClass: %@\n", tag, NSStringFromClass([obj class])];
+    
+    unsigned int count;
+    objc_property_t *properties = class_copyPropertyList([obj class], &count);
+    for (int i = 0; i < count; i++) {
+        objc_property_t property = properties[i];
+        NSString *name = [NSString stringWithUTF8String:property_getName(property)];
+        id value = nil;
+        @try {
+            value = [obj valueForKey:name];
+        } @catch (NSException *e) {
+            value = @"<Exception>";
+        }
+        [str appendFormat:@"@property %@ = %@\n", name, value];
+    }
+    if (properties) free(properties);
+    [str appendString:@"=========================\n"];
+    HWSLog(str);
+}
+
+static void replacePathAndSizeInFileInfo(id info) {
+    if (!g_intercept || !g_hapPath || !info) return;
+    @try {
+        unsigned int count;
+        objc_property_t *properties = class_copyPropertyList([info class], &count);
+        for (int i = 0; i < count; i++) {
+            objc_property_t property = properties[i];
+            NSString *name = [NSString stringWithUTF8String:property_getName(property)];
+            id value = [info valueForKey:name];
+            
+            if ([value isKindOfClass:[NSString class]]) {
+                NSString *valStr = (NSString *)value;
+                if ([valStr containsString:@".bin"] || [valStr containsString:@".hap"] || [valStr containsString:@".pkg"]) {
+                    HWSLog([NSString stringWithFormat:@"✅ 发现潜在路径属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapPath]);
+                    [info setValue:g_hapPath forKey:name];
+                    HWSLog(@"✨ 路径修改成功！");
+                }
+            } else if ([name.lowercaseString containsString:@"size"]) {
+                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+                if (attrs) {
+                    long long hapSize = [attrs fileSize];
+                    if (hapSize > 0) {
+                        HWSLog([NSString stringWithFormat:@"✅ 发现大小属性 [%@] = %@ \n尝试修改为: %lld", name, value, hapSize]);
+                        [info setValue:@(hapSize) forKey:name];
+                    }
+                }
+            }
+        }
+        if (properties) free(properties);
+    } @catch (NSException *e) {
+        HWSLog([NSString stringWithFormat:@"❌ 动态修改异常: %@", e]);
+    }
+}
+
+%group SideloadHooks
+
+%hook NSNotificationCenter
+- (void)postNotificationName:(NSNotificationName)aName object:(id)anObject userInfo:(NSDictionary *)aUserInfo {
+    if ([aName isEqualToString:@"notif_pushfile_update_status"]) {
+        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Stack Trace] pushFileProgress 发送方: %@\n%@", [anObject class], [NSThread callStackSymbols]]);
+    }
+    %orig;
+}
+%end
+
+%hook SHDWiFiCommandSend
+
++ (void)sendNotifiDeviceStartTransferFileWithFileInfo:(id)info {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] sendNotifiDeviceStartTransferFileWithFileInfo:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
++ (void)sendNotifiDeviceTransferFileInfoWithFileInfo:(id)info {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] sendNotifiDeviceTransferFileInfoWithFileInfo:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
++ (void)sendTransferFileInfo:(id)info {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] sendTransferFileInfo:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
+%end
+
+%hook SHDWiFiTransferManager
+
+- (void)transferFileInfo:(id)info callback:(id)cb {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] transferFileInfo:callback:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
+%end
+
+%hook SHWatchAppStoreManager
+
+- (void)pushFileProgress:(NSNotification *)notification {
+    if ([notification isKindOfClass:[NSNotification class]]) { // Ensure it's not a generic raw object
+        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Hook Hit] pushFileProgress: \nName: %@ \nUserInfo: %@", notification.name, notification.userInfo]);
+    } else {
+        HWSLog(@"\n🚀🚀 [Hook Hit] pushFileProgress (Not an NSNotification)");
+    }
+    %orig;
+}
+
+%end
+
+%end
+
 %hook NSFileManager
 
-// copy 路径版：把目标 .bin 替换为 .hap
 - (BOOL)copyItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
-    if (g_intercept && g_hapPath && isTargetBin(dst) && ![dst isEqualToString:g_hapPath]) {
-        HWSLog([NSString stringWithFormat:@"💥 [Copy(P)] %@ -> .hap", dst.lastPathComponent]);
-        return %orig(g_hapPath, dst, err);
-    }
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
     return %orig;
 }
 
-// copy URL版
 - (BOOL)copyItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
-    if (g_intercept && g_hapPath && isTargetBin(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
-        HWSLog([NSString stringWithFormat:@"💥 [Copy(U)] %@ -> .hap", dstU.lastPathComponent]);
-        return %orig([NSURL fileURLWithPath:g_hapPath], dstU, err);
-    }
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Copy(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
     return %orig;
 }
 
-// move 路径版：先删目标，再从 .hap 复制过去
 - (BOOL)moveItemAtPath:(NSString *)src toPath:(NSString *)dst error:(NSError **)err {
-    if (g_intercept && g_hapPath && isTargetBin(dst) && ![dst isEqualToString:g_hapPath]) {
-        HWSLog([NSString stringWithFormat:@"💥 [Move(P)] %@ -> .hap", dst.lastPathComponent]);
-        [self removeItemAtPath:dst error:nil];
-        return [self copyItemAtPath:g_hapPath toPath:dst error:err];
-    }
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(P): %@ -> %@", src.lastPathComponent, dst.lastPathComponent]); }
     return %orig;
 }
 
-// move URL版（最常触发的主路径）
 - (BOOL)moveItemAtURL:(NSURL *)srcU toURL:(NSURL *)dstU error:(NSError **)err {
-    if (g_intercept && g_hapPath && isTargetBin(dstU.path) && ![dstU.path isEqualToString:g_hapPath]) {
-        HWSLog([NSString stringWithFormat:@"💥 [Move(U)] %@ -> .hap (%lld bytes)",
-                dstU.lastPathComponent,
-                (long long)[[[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil] fileSize]]);
-        [self removeItemAtURL:dstU error:nil];
-        return [self copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:dstU error:err];
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Move(U): %@ -> %@", srcU.lastPathComponent, dstU.lastPathComponent]); }
+    
+    // v4.19: 只要开启劫持，不论选没选 HAP，只要看到 .bin 就开始全宇宙搜寻底层接口
+    if (g_intercept && isTargetExt(dstU.path)) {
+        HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            // v4.33: 精准扫描，去除了会误杀的 ble 和 ota
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.33] 开始绝对精准探测底层传输接口 ======");
+                
+                NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
+                
+                int n = objc_getClassList(NULL, 0);
+                Class *classes = (Class *)malloc(sizeof(Class) * n);
+                objc_getClassList(classes, n);
+                
+                for (int i = 0; i < n; i++) {
+                    NSString *clsName = NSStringFromClass(classes[i]);
+                    if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) continue;
+                    
+                    unsigned int count = 0;
+                    Method *methods = class_copyMethodList(classes[i], &count);
+                    for (unsigned int m = 0; m < count; m++) {
+                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                        for (NSString *kw in mKws) {
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                                HWSLog([NSString stringWithFormat:@"🎯 发现目标: -[%@ %@]", clsName, mName]);
+                                break;
+                            }
+                        }
+                    }
+                    if (methods) free(methods);
+                    
+                    methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
+                    for (unsigned int m = 0; m < count; m++) {
+                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                        for (NSString *kw in mKws) {
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                                HWSLog([NSString stringWithFormat:@"🎯 发现目标: +[%@ %@]", clsName, mName]);
+                                break;
+                            }
+                        }
+                    }
+                    if (methods) free(methods);
+                }
+                free(classes);
+                HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
+            });
+
+            HWSLog(@"\n======== [v4.33] 触发底层传输 ========");
+            
+            // 延迟初始化动态 Hook
+            Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
+            Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
+            Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
+            
+            if (wifiCls || storeCls || cmdCls) {
+                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d Cmd:%d，正在注入！", (wifiCls != nil), (storeCls != nil), (cmdCls != nil)]);
+                %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
+            } else {
+                HWSLog(@"❌ 获取动态类句柄失败。");
+            }
+        });
+
+        // 依然向原始文件放行，绕过 DRM 检查以命中传输逻辑
+        return %orig;
     }
     return %orig;
 }
 
 %end
 
-// ============================================================
-// Hook NSData —— 拦截内存数据的物理写入
-// Bug 修复：原版错误地把 .bin 数据写回 .hap 路径，污染源文件
-// ============================================================
 %hook NSData
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if (g_intercept && g_hapPath && isTargetBin(path) && ![path isEqualToString:g_hapPath]) {
-        HWSLog([NSString stringWithFormat:@"💥 [WriteFile] %@ -> .hap", path.lastPathComponent]);
-        // ✅ 正确：加载 .hap 数据，写入目标 .bin 路径（而非把 .bin 写入 .hap）
-        NSData *hapData = [NSData dataWithContentsOfFile:g_hapPath];
-        if (hapData) return [hapData writeToFile:path atomically:useAuxiliaryFile];
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteFile: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSData writeToFile!");
+        NSFileManager *fm = [NSFileManager defaultManager];
+        [fm removeItemAtPath:path error:nil];
+        return [fm copyItemAtPath:g_hapPath toPath:path error:nil];
     }
     return %orig;
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if (g_intercept && g_hapPath && isTargetBin(url.path) && ![url.path isEqualToString:g_hapPath]) {
-        HWSLog([NSString stringWithFormat:@"💥 [WriteURL] %@ -> .hap", url.lastPathComponent]);
-        NSFileManager *fm = [NSFileManager defaultManager];
-        [fm removeItemAtURL:url error:nil];
-        return [fm copyItemAtURL:[NSURL fileURLWithPath:g_hapPath] toURL:url error:nil];
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"WriteURL: %@", url.lastPathComponent]); }
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadFile: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Data ReadFile!");
+        return %orig(g_hapPath);
+    }
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Data ReadURL: %@", url.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Data ReadURL!");
+        return %orig([NSURL fileURLWithPath:g_hapPath]);
+    }
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadFile: %@", path.lastPathComponent]); }
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError **)errorPtr {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"Init ReadURL: %@", url.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(url.path) && ![url.path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 Init ReadURL!");
+        return %orig([NSURL fileURLWithPath:g_hapPath], readOptionsMask, errorPtr);
     }
     return %orig;
 }
 
 %end
 
-// ============================================================
-// 全局 DocumentPicker delegate —— 解决 delegate 绑在随机 VC 上的隐患
-// ============================================================
-@interface HWSDocPickerDelegate : NSObject <UIDocumentPickerDelegate>
-+ (instancetype)shared;
-@end
-
-@implementation HWSDocPickerDelegate
-+ (instancetype)shared {
-    static HWSDocPickerDelegate *s = nil;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ s = [self new]; });
-    return s;
-}
-- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    if (urls.count == 0) return;
-    NSURL *url = urls.firstObject;
-    // 如果 App 是沙箱临时授权，需要先拷贝到我们的 Temp 目录
-    NSString *dst = [NSTemporaryDirectory() stringByAppendingPathComponent:url.lastPathComponent];
-    [[NSFileManager defaultManager] removeItemAtPath:dst error:nil];
-    NSError *err = nil;
-    if ([url startAccessingSecurityScopedResource]) {
-        [[NSFileManager defaultManager] copyItemAtURL:url toURL:[NSURL fileURLWithPath:dst] error:&err];
-        [url stopAccessingSecurityScopedResource];
+%hook NSFileManager
+- (NSDictionary *)attributesOfItemAtPath:(NSString *)path error:(NSError **)err {
+    NSDictionary *origAttrs = %orig;
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        NSDictionary *hapAttrs = %orig(g_hapPath, nil);
+        if (hapAttrs && origAttrs) {
+            NSMutableDictionary *newAttrs = [origAttrs mutableCopy];
+            newAttrs[NSFileSize] = hapAttrs[NSFileSize];
+            HWSLog([NSString stringWithFormat:@"💥 [系统欺骗] 将 .bin 伪装为 .hap 大小: %@ -> %@", origAttrs[NSFileSize], hapAttrs[NSFileSize]]);
+            return newAttrs;
+        }
     }
-    g_hapPath   = err ? url.path : dst;
-    g_intercept = YES;
-    HWSLog([NSString stringWithFormat:@"[UI] 已挂载外挂包: %@ (%lld bytes)",
-            g_hapPath.lastPathComponent,
-            (long long)[[[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil] fileSize]]);
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *ac = [UIAlertController
-            alertControllerWithTitle:@"✅ 挂载成功"
-            message:[NSString stringWithFormat:@"包: %@\n劫持已开启，点击市场应用的安装即可替换！", g_hapPath.lastPathComponent]
-            preferredStyle:UIAlertControllerStyleAlert];
-        [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:ac animated:YES completion:nil];
-    });
+    return origAttrs;
 }
-- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {}
-@end
+%end
 
-// ============================================================
-// 悬浮按钮工具函数（全局，不依赖 VC self）
-// ============================================================
-static void hws_showDocPicker(void) {
-    UIDocumentPickerViewController *dp = [[UIDocumentPickerViewController alloc]
-        initWithDocumentTypes:@[@"public.data"] inMode:UIDocumentPickerModeImport];
-    dp.delegate = [HWSDocPickerDelegate shared];
-    UIViewController *root = [UIApplication sharedApplication].keyWindow.rootViewController;
-    while (root.presentedViewController) root = root.presentedViewController;
-    [root presentViewController:dp animated:YES completion:nil];
+%hook NSFileHandle
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
+    if (g_intercept && isTargetExt(path)) { 
+        if (g_hapPath && ![path isEqualToString:g_hapPath]) {
+            HWSLog([NSString stringWithFormat:@"💥 [底层流欺骗] C++ 引擎请求文件流，狸猫换太子，返回外挂 .hap!"]);
+            return %orig(g_hapPath);
+        }
+    }
+    return %orig;
 }
+%end
 
-static void hws_showMenu(void) {
-    NSString *statusStr = g_intercept ? @"🟢 开启" : @"🔴 关闭";
-    NSString *hapStr    = g_hapPath ? [NSString stringWithFormat:@"%@ (%lld KB)",
-                                       g_hapPath.lastPathComponent,
-                                       (long long)[[[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil] fileSize] / 1024]
-                                    : @"未选择";
-    UIAlertController *ac = [UIAlertController
-        alertControllerWithTitle:@"侧载管理 v4.32"
-        message:[NSString stringWithFormat:@"劫持状态: %@\n当前包: %@", statusStr, hapStr]
-        preferredStyle:UIAlertControllerStyleAlert];
-
-    NSString *toggleTitle = g_intercept ? @"🚫 关闭劫持" : @"✅ 开启劫持";
-    [ac addAction:[UIAlertAction actionWithTitle:toggleTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        g_intercept = !g_intercept;
-        HWSLog([NSString stringWithFormat:@"[UI] 劫持已%@", g_intercept ? @"开启" : @"关闭"]);
-    }]];
-
-    [ac addAction:[UIAlertAction actionWithTitle:@"📂 选取 .hap 包" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        hws_showDocPicker();
-    }]];
-
-    [ac addAction:[UIAlertAction actionWithTitle:@"🗑 清空日志" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
-        NSString *logFile = [NSTemporaryDirectory() stringByAppendingPathComponent:@"HWHealthSideload.log"];
-        [[NSFileManager defaultManager] removeItemAtPath:logFile error:nil];
-    }]];
-
-    [ac addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
-
-    UIViewController *root = [UIApplication sharedApplication].keyWindow.rootViewController;
-    while (root.presentedViewController) root = root.presentedViewController;
-    [root presentViewController:ac animated:YES completion:nil];
+%hook NSInputStream
++ (instancetype)inputStreamWithFileAtPath:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Read: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSInputStream!");
+        return %orig(g_hapPath);
+    }
+    return %orig;
 }
-
-// ============================================================
-// Hook UIViewController —— 注入悬浮按钮（弱引用，避免悬空崩溃）
-// ============================================================
-%hook UIViewController
-
-- (void)viewDidLoad {
-    %orig;
-    // 只在符合华为相关界面时触发，且全局只初始化一次
-    NSString *cls = NSStringFromClass(self.class);
-    if (!([cls containsString:@"Device"] || [cls containsString:@"Watch"] || [cls containsString:@"Main"])) return;
-
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UIWindow *win = [UIApplication sharedApplication].keyWindow;
-            if (!win) return;
-
-            UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-            btn.frame = CGRectMake(12, 110, 56, 56);
-            btn.backgroundColor = [UIColor colorWithRed:0.1 green:0.6 blue:1.0 alpha:0.85];
-            btn.layer.cornerRadius = 28;
-            btn.layer.shadowColor  = [UIColor blackColor].CGColor;
-            btn.layer.shadowOpacity = 0.4;
-            btn.layer.shadowRadius  = 6;
-            btn.layer.shadowOffset  = CGSizeMake(0, 3);
-            [btn setTitle:@"⚡️" forState:UIControlStateNormal];
-            btn.titleLabel.font = [UIFont systemFontOfSize:22];
-
-            // ✅ 修复：使用 block 回调而非 target-action 绑定 self，避免 VC 被回收后崩溃
-            [btn addTarget:[HWSDocPickerDelegate shared]
-                    action:@selector(hws_btnTapped)
-          forControlEvents:UIControlEventTouchUpInside];
-
-            // 注册 tap 响应
-            class_addMethod([HWSDocPickerDelegate class], @selector(hws_btnTapped), imp_implementationWithBlock(^{
-                hws_showMenu();
-            }), "v@:");
-
-            // 拖动
-            UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:[HWSDocPickerDelegate shared] action:@selector(hws_drag:)];
-            class_addMethod([HWSDocPickerDelegate class], @selector(hws_drag:), imp_implementationWithBlock(^(id _self, UIPanGestureRecognizer *g){
-                UIView *v = g.view;
-                CGPoint p = [g locationInView:v.superview];
-                v.center = p;
-            }), "v@:@");
-            [btn addGestureRecognizer:pan];
-
-            [win addSubview:btn];
-        });
-    });
+- (instancetype)initWithFileAtPath:(NSString *)path {
+    if (g_intercept) { HWSLog([NSString stringWithFormat:@"IS Init: %@", path.lastPathComponent]); }
+    if (g_intercept && g_hapPath && isTargetExt(path) && ![path isEqualToString:g_hapPath]) {
+        HWSLog(@"💥 劫持 NSInputStream init!");
+        return %orig(g_hapPath);
+    }
+    return %orig;
 }
 
 %end
+
+%hook NSURLSession
+
+%end
+
+// ============================================================================
+// Part 4: 运行时探测
+// ============================================================================
+
+static NSString *searchClasses(NSArray *keywords) {
+    NSMutableString *r = [NSMutableString string];
+    int n = objc_getClassList(NULL, 0);
+    Class *cls = (Class *)malloc(sizeof(Class) * n);
+    objc_getClassList(cls, n);
+    for (NSString *kw in keywords) {
+        int f = 0;
+        [r appendFormat:@"\n[%@]\n", kw];
+        for (int i = 0; i < n; i++) {
+            NSString *name = NSStringFromClass(cls[i]);
+            if ([name localizedCaseInsensitiveContainsString:kw]) {
+                [r appendFormat:@"  %@\n", name];
+                if (++f >= 15) { [r appendString:@"  ...\n"]; break; }
+            }
+        }
+        if (!f) [r appendString:@"  (none)\n"];
+    }
+    free(cls);
+    return r;
+}
+
+static NSString *dumpTargetClasses() {
+    NSArray *targets = @[
+        @"HuaweiWear.SHWatchAppStoreManager", 
+        @"SHSports.SHNDownloader", 
+        @"HuaweiWear.SHHapVersionRequest", 
+        @"WatchFaceSDK.WFTrialThemesInstallObserver", 
+        @"HuaweiWear.SHWatchAppStoreSetModel",
+        @"AppProtection.APAppInstallationManager",
+        @"SHSports.RoadNetworkGaoDeDownloader"
+    ];
+    NSMutableString *r = [NSMutableString string];
+    int n = objc_getClassList(NULL, 0);
+    Class *classes = (Class *)malloc(sizeof(Class) * n);
+    objc_getClassList(classes, n);
+    for (int i = 0; i < n; i++) {
+        NSString *name = NSStringFromClass(classes[i]);
+        for (NSString *t in targets) {
+            if ([name isEqualToString:t] || [name hasSuffix:t]) {
+                Class cls = classes[i];
+                [r appendFormat:@"\n=== [%@] ===\n", name];
+                
+                // Instance methods
+                unsigned int count;
+                Method *methods = class_copyMethodList(cls, &count);
+                for (int m = 0; m < count; m++) {
+                    [r appendFormat:@"- %@\n", NSStringFromSelector(method_getName(methods[m]))];
+                }
+                free(methods);
+                
+                // Class methods
+                Method *classMethods = class_copyMethodList(object_getClass((id)cls), &count);
+                for (int m = 0; m < count; m++) {
+                    [r appendFormat:@"+ %@\n", NSStringFromSelector(method_getName(classMethods[m]))];
+                }
+                free(classMethods);
+            }
+        }
+    }
+    free(classes);
+    return (r.length > 0) ? r : @"未找到目标类";
+}
+
+// End of dynamic hooking logic moved above
+
+// ============================================================================
+// Part 5: UI
+// ============================================================================
+
+@interface HWSideloadUI : NSObject <UIDocumentPickerDelegate>
+@property (nonatomic, strong) UIButton *btn;
++ (instancetype)shared;
+@end
+
+@implementation HWSideloadUI
+
++ (instancetype)shared {
+    static HWSideloadUI *s;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ s = [HWSideloadUI new]; });
+    return s;
+}
+
+- (void)attach:(UIWindow *)w {
+    if (self.btn) return;
+
+    CGFloat sw = [UIScreen mainScreen].bounds.size.width;
+    CGFloat sh = [UIScreen mainScreen].bounds.size.height;
+
+    self.btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.btn.frame = CGRectMake(sw - 135, sh - 160, 120, 50);
+    self.btn.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
+    [self.btn setTitle:@"侧载" forState:UIControlStateNormal];
+    self.btn.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    [self.btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.btn.layer.cornerRadius = 25;
+    self.btn.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.btn.layer.shadowOffset = CGSizeMake(0, 3);
+    self.btn.layer.shadowOpacity = 0.4;
+    self.btn.layer.zPosition = 99999;
+
+    [self.btn addTarget:self action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];
+    
+    UIViewController *vc = w.rootViewController;
+    if (vc && vc.view) {
+        [vc.view addSubview:self.btn];
+        [vc.view bringSubviewToFront:self.btn];
+    } else {
+        [w addSubview:self.btn];
+    }
+
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
+        initWithTarget:self action:@selector(drag:)];
+    [self.btn addGestureRecognizer:pan];
+}
+
+- (void)drag:(UIPanGestureRecognizer *)r {
+    CGPoint t = [r translationInView:r.view.superview];
+    r.view.center = CGPointMake(r.view.center.x + t.x, r.view.center.y + t.y);
+    [r setTranslation:CGPointZero inView:r.view.superview];
+}
+
+- (void)menu {
+    NSString *bundleStatus = g_realBundleId
+        ? [NSString stringWithFormat:@"真实ID: %@\n→ 已拦截网络层替换为官方ID", g_realBundleId]
+        : @"Bundle ID: 未捕获";
+    NSString *st = g_hapPath
+        ? [NSString stringWithFormat:@"%@\n\nHAP: %@\n劫持: %@",
+           bundleStatus, [g_hapPath lastPathComponent], g_intercept ? @"已开启" : @"已关闭"]
+        : bundleStatus;
+
+    // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
+    UIAlertController *m = [UIAlertController
+        alertControllerWithTitle:@"HAP 侧载 v4.33"
+        message:st preferredStyle:UIAlertControllerStyleAlert];
+
+    [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
+        style:UIAlertActionStyleDefault handler:^(id a) {
+        [self pickFile];
+    }]];
+
+    if (g_hapPath) {
+        NSString *title = g_intercept ? @"关闭劫持" : @"开启劫持";
+        [m addAction:[UIAlertAction actionWithTitle:title
+            style:UIAlertActionStyleDefault handler:^(id a) {
+            g_intercept = !g_intercept;
+            [self.btn setTitle:(g_intercept ? @"开启" : @"侧载")
+                      forState:UIControlStateNormal];
+            self.btn.backgroundColor = g_intercept
+                ? [UIColor colorWithRed:0.2 green:0.8 blue:0.3 alpha:0.95]
+                : [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
+            
+            if (g_intercept) {
+                // 清空之前的日志以便新一轮监控
+                if (g_logs) [g_logs removeAllObjects];
+            }
+            
+            NSString *msg = g_intercept
+                ? @"劫持已开启。\n前往应用市场安装应用！"
+                : @"劫持已关闭。";
+            [self alert:@"状态" msg:msg];
+        }]];
+    }
+
+    [m addAction:[UIAlertAction actionWithTitle:@"查看底层监控日志"
+        style:UIAlertActionStyleDefault handler:^(id a) {
+        NSString *logStr = (g_logs && g_logs.count > 0) ? [g_logs componentsJoinedByString:@"\n"] : @"暂无监控日志。请先[开启劫持]并去市场安装。";
+        UIPasteboard *pb = [UIPasteboard generalPasteboard];
+        [pb setString:logStr];
+        [self alert:@"日志已复制" msg:[NSString stringWithFormat:@"已抓取 %lu 条文件/网络行为监控记录，已复制到剪贴板！去黏贴发给 AI 分析看后缀是啥！", (unsigned long)g_logs.count]];
+    }]];
+
+    [m addAction:[UIAlertAction actionWithTitle:@"取消"
+        style:UIAlertActionStyleCancel handler:nil]];
+
+    UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (vc.presentedViewController) vc = vc.presentedViewController;
+    [vc presentViewController:m animated:YES completion:nil];
+}
+
+- (void)pickFile {
+    UIDocumentPickerViewController *p = [[UIDocumentPickerViewController alloc]
+        initWithDocumentTypes:@[@"public.data"] inMode:UIDocumentPickerModeImport];
+    p.delegate = self;
+    p.allowsMultipleSelection = NO;
+    // 不用 FullScreen，用默认样式，避免破坏 TabBar
+    p.modalPresentationStyle = UIModalPresentationAutomatic;
+    UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (vc.presentedViewController) vc = vc.presentedViewController;
+    [vc presentViewController:p animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)c
+    didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    NSURL *src = urls.firstObject;
+    if (!src) return;
+
+    BOOL a = [src startAccessingSecurityScopedResource];
+    NSString *dir = [NSSearchPathForDirectoriesInDomains(
+        NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *dst = [dir stringByAppendingPathComponent:src.lastPathComponent];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm removeItemAtPath:dst error:nil];
+    NSError *err;
+    [fm copyItemAtPath:src.path toPath:dst error:&err];
+    if (a) [src stopAccessingSecurityScopedResource];
+
+    if (!err) {
+        g_hapPath = [dst copy];
+        NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
+        unsigned long long sz = [at fileSize];
+        [self alert:@"准备就绪"
+               msg:[NSString stringWithFormat:
+                    @"%@ (%.1f MB)\n\n"
+                    @"下一步:\n"
+                    @"1. 点击侧载按钮 > 开启劫持\n"
+                    @"2. 进入手表应用市场\n"
+                    @"3. 安装任意应用\n"
+                    @"4. 手表将接收您的文件",
+                    [dst lastPathComponent], sz/1048576.0]];
+    } else {
+        [self alert:@"错误" msg:err.localizedDescription];
+    }
+}
+
+- (void)alert:(NSString *)t msg:(NSString *)m {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:t
+        message:m preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"确定"
+        style:UIAlertActionStyleDefault handler:nil]];
+    UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (vc.presentedViewController) vc = vc.presentedViewController;
+    [vc presentViewController:a animated:YES completion:nil];
+}
+
+@end
+
+// ============================================================================
+// Part 6: Window Hook & Setup
+// ============================================================================
+
+%hook UIWindow
+- (void)makeKeyAndVisible {
+    %orig;
+}
+%end
+
+static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    UIWindow *k = [UIApplication sharedApplication].keyWindow;
+    if (k) [[HWSideloadUI shared] attach:k];
+}
+
+%ctor {
+    // 立即捕获真实 Bundle ID，用于网络请求替换 (此时 hook 尚未生效，取到的是真实值)
+    g_realBundleId = [[[NSBundle mainBundle] bundleIdentifier] copy];
+    // Initialize System Hooks
+    NSLog(@"[HWSideload] Initializing main hooks.");
+    %init(_ungrouped);
+    NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        struct rebinding rb[1];
+        rb[0].name = "SecCodeCheckValidity";
+        rb[0].replacement = (void *)my_SecCodeCheckValidity;
+        rb[0].replaced = (void **)&orig_SecCodeCheckValidity;
+
+        rebind_symbols((struct rebinding *)rb, 1);
+
+        CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
+            appDidBecomeActive, (CFStringRef)UIApplicationDidBecomeActiveNotification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+    });
+}
+
