@@ -37,14 +37,11 @@ static BOOL isTargetExt(NSString *path) {
 static id fixDictSizes(id obj, long long targetSize) {
     if ([obj isKindOfClass:[NSDictionary class]]) {
         NSMutableDictionary *m = [obj mutableCopy];
-        // 关键安全补丁：只修改带有下载/应用特征的字典，避免摧毁心率、登录等基础业务 JSON
-        BOOL isSafeToModify = (m[@"downloadUrl"] != nil || m[@"downloadURL"] != nil || m[@"pkgUrl"] != nil || m[@"packUrl"] != nil || m[@"url"] != nil || m[@"appId"] != nil);
-        
         for (NSString *key in [m allKeys]) {
             id val = m[key];
             NSString *lcKey = key.lowercaseString;
             
-            if (isSafeToModify && ([lcKey isEqualToString:@"size"] || [lcKey isEqualToString:@"filesize"] || [lcKey isEqualToString:@"pkgsize"] || [lcKey isEqualToString:@"packagesize"] || [lcKey isEqualToString:@"appsize"])) {
+            if ([lcKey isEqualToString:@"size"] || [lcKey isEqualToString:@"filesize"] || [lcKey isEqualToString:@"pkgsize"] || [lcKey isEqualToString:@"packagesize"] || [lcKey isEqualToString:@"appsize"]) {
                 if ([val isKindOfClass:[NSNumber class]] || [val isKindOfClass:[NSString class]]) {
                     long long origSize = [val longLongValue];
                     if (origSize > 1024) { // Only override sizes > 1KB
@@ -72,14 +69,14 @@ static id fixDictSizes(id obj, long long targetSize) {
 + (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)opt error:(NSError **)error {
     id res = %orig;
     if (g_intercept && g_hapPath && res) {
-        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
-        if (attrs) {
-            long long hapSize = [attrs fileSize];
-            if (hapSize > 0) {
-                NSString *jsonStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                if (jsonStr && ([jsonStr containsString:@"size"] || [jsonStr containsString:@"pkgSize"] || [jsonStr containsString:@"fileSize"])) {
-                    if ([jsonStr containsString:@"downloadUrl"] || [jsonStr containsString:@"appId"] || [jsonStr containsString:@"package"]) {
-                        HWSLog(@"💥 [JSON嗅探] 捕获应用市场元数据！启动动态劫持...");
+        NSString *jsonStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (jsonStr && ([jsonStr containsString:@".bin\""] || [jsonStr containsString:@".bin?"] || [jsonStr containsString:@".hap\""] || [jsonStr containsString:@".hap?"])) {
+            if ([jsonStr containsString:@"size"] || [jsonStr containsString:@"pkgSize"] || [jsonStr containsString:@"fileSize"]) {
+                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+                if (attrs) {
+                    long long hapSize = [attrs fileSize];
+                    if (hapSize > 0) {
+                        HWSLog(@"💥 [JSON嗅探] 捕获纯正应用下载元数据！启动动态特权劫持...");
                         res = fixDictSizes(res, hapSize);
                     }
                 }
