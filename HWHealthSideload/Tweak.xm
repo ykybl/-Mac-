@@ -399,9 +399,10 @@ static void replacePathAndSizeInFileInfo(id info) {
 
     // ====== 一次性 dump WSSCommonFileMgr 全部方法名，找 sendInstall* 方法 ======
     static dispatch_once_t methodDumpOnce;
+    Class selfClass = [self class]; // 在 block 外获取，避免 forward declaration 错误
     dispatch_once(&methodDumpOnce, ^{
         unsigned int count = 0;
-        Method *methods = class_copyMethodList([self class], &count);
+        Method *methods = class_copyMethodList(selfClass, &count);
         NSMutableString *allMethods = [NSMutableString stringWithFormat:@"📋 WSSCommonFileMgr 全部 %u 个方法:\n", count];
         for (unsigned int i = 0; i < count; i++) {
             [allMethods appendFormat:@"  · %@\n", NSStringFromSelector(method_getName(methods[i]))];
@@ -409,6 +410,7 @@ static void replacePathAndSizeInFileInfo(id info) {
         free(methods);
         HWSLog(allMethods);
     });
+
 
     // ====== T+5/T+15/T+30 延时监控 isPushBusy，确认手表安装结果时机 ======
     __weak id weakSelf = self;
