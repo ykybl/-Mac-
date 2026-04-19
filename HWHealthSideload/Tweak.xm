@@ -6,6 +6,7 @@
 
 static BOOL g_intercept = NO;
 static NSString *g_hapPath = nil;
+static long long g_hapSize = 0;
 
 static void HWSLog(NSString *msg) {
     if (!msg) return;
@@ -41,11 +42,17 @@ static id fixDictSizes(id obj, long long targetSize) {
             id val = m[key];
             NSString *lcKey = key.lowercaseString;
             if ([lcKey isEqualToString:@"size"] || [lcKey isEqualToString:@"filesize"] || [lcKey isEqualToString:@"pkgsize"] || [lcKey isEqualToString:@"packagesize"] || [lcKey isEqualToString:@"appsize"]) {
-                if ([val isKindOfClass:[NSNumber class]] || [val isKindOfClass:[NSString class]]) {
+                if ([val isKindOfClass:[NSString class]]) {
+                    long long origSize = [val longLongValue];
+                    if (origSize > 1024) { // Only override sizes > 1KB
+                        m[key] = [NSString stringWithFormat:@"%lld", targetSize];
+                        HWSLog([NSString stringWithFormat:@"💥 [JSON欺骗] 将 String Size: %@ -> %lld", val, targetSize]);
+                    }
+                } else if ([val isKindOfClass:[NSNumber class]]) {
                     long long origSize = [val longLongValue];
                     if (origSize > 1024) { // Only override sizes > 1KB
                         m[key] = [NSNumber numberWithLongLong:targetSize];
-                        HWSLog([NSString stringWithFormat:@"💥 [JSON欺骗] 将云端包大小改为外挂Hap大小: %@ -> %lld", val, targetSize]);
+                        HWSLog([NSString stringWithFormat:@"💥 [JSON欺骗] 将 Number Size: %@ -> %lld", val, targetSize]);
                     }
                 }
             } else if ([val isKindOfClass:[NSArray class]] || [val isKindOfClass:[NSDictionary class]]) {
@@ -67,19 +74,12 @@ static id fixDictSizes(id obj, long long targetSize) {
 
 + (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)opt error:(NSError **)error {
     id res = %orig;
-    if (g_intercept && g_hapPath && res) {
-        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
-        if (attrs) {
-            long long hapSize = [attrs fileSize];
-            if (hapSize > 0) {
-                NSString *jsonStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                if (jsonStr && ([jsonStr containsString:@"size"] || [jsonStr containsString:@"pkgSize"] || [jsonStr containsString:@"fileSize"])) {
-                    if ([jsonStr containsString:@"downloadUrl"] || [jsonStr containsString:@"appId"] || [jsonStr containsString:@"package"]) {
-                        HWSLog(@"💥 [JSON嗅探] 捕获应用市场元数据！启动动态劫持...");
-                        res = fixDictSizes(res, hapSize);
-                    }
-                }
-            }
+    if (g_intercept && g_hapSize > 0 && res) {
+        // Fast pre-check directly on bytes could be faster, but doing it on string is safer
+        NSString *jsonStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (jsonStr && [jsonStr containsString:@".bin"] && [jsonStr containsString:@"downloadUrl"]) {
+            HWSLog(@"💥 [JSON嗅探] 捕获应用市场元数据！启动动态劫持...");
+            res = fixDictSizes(res, g_hapSize);
         }
     }
     return res;
@@ -230,9 +230,15 @@ static id fixDictSizes(id obj, long long targetSize) {
     if (urls.count > 0) {
         g_hapPath = urls.firstObject.path;
         g_intercept = YES;
-        HWSLog([NSString stringWithFormat:@"[UI] 已加载自定义包: %@", g_hapPath]);
         
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"成功" message:[NSString stringWithFormat:@"已挂载: %@\n全局劫持已开启，现在可以直接点击市场中的安装！", g_hapPath.lastPathComponent] preferredStyle:UIAlertControllerStyleAlert];
+        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+        if (attrs) {
+            g_hapSize = [attrs fileSize];
+        }
+        
+        HWSLog([NSString stringWithFormat:@"[UI] 已加载自定义包: %@, 原始大小: %lld", g_hapPath, g_hapSize]);
+        
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"成功" message:[NSString stringWithFormat:@"已挂载: %@\n大小: %lld bytes\n劫持已开启，请进入应用市场点击安装！", g_hapPath.lastPathComponent, g_hapSize] preferredStyle:UIAlertControllerStyleAlert];
         [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:ac animated:YES completion:nil];
     }
