@@ -180,38 +180,73 @@ static void dumpObjectProperties(id obj, NSString *tag) {
     HWSLog(str);
 }
 
+static void replacePathAndSizeInFileInfo(id info) {
+    if (!g_intercept || !g_hapPath || !info) return;
+    @try {
+        unsigned int count;
+        objc_property_t *properties = class_copyPropertyList([info class], &count);
+        for (int i = 0; i < count; i++) {
+            objc_property_t property = properties[i];
+            NSString *name = [NSString stringWithUTF8String:property_getName(property)];
+            id value = [info valueForKey:name];
+            
+            if ([value isKindOfClass:[NSString class]]) {
+                NSString *valStr = (NSString *)value;
+                if ([valStr containsString:@".bin"] || [valStr containsString:@".hap"] || [valStr containsString:@".pkg"]) {
+                    HWSLog([NSString stringWithFormat:@"✅ 发现潜在路径属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapPath]);
+                    [info setValue:g_hapPath forKey:name];
+                    HWSLog(@"✨ 路径修改成功！");
+                }
+            } else if ([name.lowercaseString containsString:@"size"]) {
+                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+                if (attrs) {
+                    long long hapSize = [attrs fileSize];
+                    if (hapSize > 0) {
+                        HWSLog([NSString stringWithFormat:@"✅ 发现大小属性 [%@] = %@ \n尝试修改为: %lld", name, value, hapSize]);
+                        [info setValue:@(hapSize) forKey:name];
+                    }
+                }
+            }
+        }
+        if (properties) free(properties);
+    } @catch (NSException *e) {
+        HWSLog([NSString stringWithFormat:@"❌ 动态修改异常: %@", e]);
+    }
+}
+
 %group SideloadHooks
+
+%hook SHDWiFiCommandSend
+
++ (void)sendNotifiDeviceStartTransferFileWithFileInfo:(id)info {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] sendNotifiDeviceStartTransferFileWithFileInfo:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
++ (void)sendNotifiDeviceTransferFileInfoWithFileInfo:(id)info {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] sendNotifiDeviceTransferFileInfoWithFileInfo:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
++ (void)sendTransferFileInfo:(id)info {
+    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] sendTransferFileInfo:");
+    dumpObjectProperties(info, @"FileInfo Object");
+    replacePathAndSizeInFileInfo(info);
+    %orig;
+}
+
+%end
 
 %hook SHDWiFiTransferManager
 
 - (void)transferFileInfo:(id)info callback:(id)cb {
     HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] transferFileInfo:callback:");
     dumpObjectProperties(info, @"FileInfo Object");
-    
-    if (g_intercept && g_hapPath) {
-        HWSLog([NSString stringWithFormat:@"🚀 尝试动态篡改路径... 目标: %@", g_hapPath]);
-        @try {
-            unsigned int count;
-            objc_property_t *properties = class_copyPropertyList([info class], &count);
-            for (int i = 0; i < count; i++) {
-                objc_property_t property = properties[i];
-                NSString *name = [NSString stringWithUTF8String:property_getName(property)];
-                id value = [info valueForKey:name];
-                if ([value isKindOfClass:[NSString class]]) {
-                    NSString *valStr = (NSString *)value;
-                    if ([valStr containsString:@".bin"] || [valStr containsString:@".hap"] || [valStr containsString:@".pkg"]) {
-                        HWSLog([NSString stringWithFormat:@"✅ 发现潜在路径属性 [%@] = %@ \n尝试修改为: %@", name, valStr, g_hapPath]);
-                        [info setValue:g_hapPath forKey:name];
-                        HWSLog(@"✨ 路径修改成功！");
-                    }
-                }
-            }
-            if (properties) free(properties);
-        } @catch (NSException *e) {
-            HWSLog([NSString stringWithFormat:@"❌ 动态修改异常: %@", e]);
-        }
-    }
-    
+    replacePathAndSizeInFileInfo(info);
     %orig;
 }
 
@@ -321,9 +356,11 @@ static void dumpObjectProperties(id obj, NSString *tag) {
             // 延迟初始化动态 Hook
             Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
             Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
-            if (wifiCls || storeCls) {
-                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d，正在注入！", (wifiCls != nil), (storeCls != nil)]);
-                %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls);
+            Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
+            
+            if (wifiCls || storeCls || cmdCls) {
+                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d Cmd:%d，正在注入！", (wifiCls != nil), (storeCls != nil), (cmdCls != nil)]);
+                %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
             } else {
                 HWSLog(@"❌ 获取动态类句柄失败。");
             }
