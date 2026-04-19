@@ -363,9 +363,30 @@ static void replacePathAndSizeInFileInfo(id info) {
     %orig;
 }
 
-// 文件传输完成时调用，type 代表完成类型（成功/失败）
+// 文件传输完成时调用
 - (void)finishPushFileWithType:(NSInteger)type {
-    HWSLog([NSString stringWithFormat:@"\n🔴 [WSSCommonFileMgr] finishPushFileWithType: type = %ld (0=成功, 其他=失败)", (long)type]);
+    HWSLog([NSString stringWithFormat:@"\n🔴🔴🔴 [WSSCommonFileMgr] finishPushFileWithType! type = %ld", (long)type]);
+    // 尝试捕获 self 的状态
+    @try { dumpObjectProperties(self, @"FileMgr最终状态"); } @catch (...) {}
+    %orig;
+}
+
+// 传输暂停时调用
+- (void)pausedTransferFile {
+    HWSLog(@"\n🟡 [WSSCommonFileMgr] pausedTransferFile 被调用！传输已暂停");
+    %orig;
+}
+
+// 开始发送文件内容 — 这是确认数据传输开始的关键方法！
+- (void)sendFileContentToDeviceWithDataInfo:(id)dataInfo {
+    static NSInteger chunkCount = 0;
+    chunkCount++;
+    if (chunkCount == 1) {
+        HWSLog(@"\n🟢🟢🟢 [WSSCommonFileMgr] !!!! 数据传输正式开始！sendFileContentToDeviceWithDataInfo 第一次就呼了！!!!!");
+        @try { dumpObjectProperties(dataInfo, @"DataInfo首包内容"); } @catch (...) {}
+    } else if (chunkCount % 100 == 0) {
+        HWSLog([NSString stringWithFormat:@"🟢 [WSSCommonFileMgr] 数据分包发送进度: 已发 %ld 包", (long)chunkCount]);
+    }
     %orig;
 }
 
@@ -398,6 +419,17 @@ static void replacePathAndSizeInFileInfo(id info) {
     %orig; // ← checkMode 保持原值=3，手表才不会拒绝！
 }
 
+// 开始发送文件内容（Util 版本）— 确认数据传输开始
++ (void)sendFileContentToDeviceWithDataInfo:(id)dataInfo fileData:(NSData *)fileData deviceInfo:(id)deviceInfo selectIndexArray:(id)selectIndexArray negotiate:(id)negotiate {
+    static NSInteger utilChunkCount = 0;
+    utilChunkCount++;
+    if (utilChunkCount == 1) {
+        HWSLog([NSString stringWithFormat:@"\n🟢🟢🟢 [WSSCommonFileMgrSendUtil] !!!! 数据传输开始！第一包大小: %lu 字节 !!!!", (unsigned long)fileData.length]);
+    } else if (utilChunkCount % 100 == 0) {
+        HWSLog([NSString stringWithFormat:@"🟢 [WSSCommonFileMgrSendUtil] 已发送分包数: %ld", (long)utilChunkCount]);
+    }
+    %orig;
+}
 
 // 文件传输协商发送，errorCode 是我们反馈给手表的值
 + (void)sendFileTransferNegotiate:(id)negotiate deviceInfo:(id)deviceInfo errorCode:(NSInteger)errorCode {
@@ -434,9 +466,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.46: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.47: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.46] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.47] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -444,40 +476,34 @@ static void replacePathAndSizeInFileInfo(id info) {
                 Class *classes = (Class *)malloc(sizeof(Class) * n);
                 objc_getClassList(classes, n);
                 
+                int discovered = 0;
                 for (int i = 0; i < n; i++) {
                     NSString *clsName = NSStringFromClass(classes[i]);
                     if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) continue;
-                    
                     unsigned int count = 0;
                     Method *methods = class_copyMethodList(classes[i], &count);
                     for (unsigned int m = 0; m < count; m++) {
                         NSString *mName = NSStringFromSelector(method_getName(methods[m]));
                         for (NSString *kw in mKws) {
-                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
-                                HWSLog([NSString stringWithFormat:@"🎯 发现目标: -[%@ %@]", clsName, mName]);
-                                break;
-                            }
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) { discovered++; break; }
                         }
                     }
                     if (methods) free(methods);
-                    
                     methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
                     for (unsigned int m = 0; m < count; m++) {
                         NSString *mName = NSStringFromSelector(method_getName(methods[m]));
                         for (NSString *kw in mKws) {
-                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
-                                HWSLog([NSString stringWithFormat:@"🎯 发现目标: +[%@ %@]", clsName, mName]);
-                                break;
-                            }
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) { discovered++; break; }
                         }
                     }
                     if (methods) free(methods);
                 }
                 free(classes);
-                HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
+                // 只打印总数，不打印每个方法（避免几百行噪音）
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.47] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.46] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.47] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -882,7 +908,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.46"
+        alertControllerWithTitle:@"HAP 侧载 v4.47"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
