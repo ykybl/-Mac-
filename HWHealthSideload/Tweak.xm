@@ -219,9 +219,12 @@ static void dumpObjectProperties(id obj, NSString *tag) {
 
 %hook SHWatchAppStoreManager
 
-- (void)pushFileProgress:(id)progress {
-    HWSLog(@"\n\n🚀🚀🚀 [Hook Hit] pushFileProgress:");
-    dumpObjectProperties(progress, @"Progress Object");
+- (void)pushFileProgress:(NSNotification *)notification {
+    if ([notification isKindOfClass:[NSNotification class]]) { // Ensure it's not a generic raw object
+        HWSLog([NSString stringWithFormat:@"\n🚀🚀 [Hook Hit] pushFileProgress: \nName: %@ \nUserInfo: %@", notification.name, notification.userInfo]);
+    } else {
+        HWSLog(@"\n🚀🚀 [Hook Hit] pushFileProgress (Not an NSNotification)");
+    }
     %orig;
 }
 
@@ -270,17 +273,59 @@ static void dumpObjectProperties(id obj, NSString *tag) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.22: 移除全宇宙扫描，防止 5000 行日志被 tableView 冲刷掉核心日志
-            HWSLog(@"\n======== [v4.22] 触发底层传输 ========");
+            // v4.23: 精准扫描，去除了会误杀的 ble 和 ota
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.23] 开始绝对精准探测底层传输接口 ======");
+                
+                NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
+                
+                int n = objc_getClassList(NULL, 0);
+                Class *classes = (Class *)malloc(sizeof(Class) * n);
+                objc_getClassList(classes, n);
+                
+                for (int i = 0; i < n; i++) {
+                    NSString *clsName = NSStringFromClass(classes[i]);
+                    if ([clsName hasPrefix:@"UI"] || [clsName hasPrefix:@"NS"] || [clsName hasPrefix:@"_UI"] || [clsName hasPrefix:@"CA"] || [clsName hasPrefix:@"OS_"]) continue;
+                    
+                    unsigned int count = 0;
+                    Method *methods = class_copyMethodList(classes[i], &count);
+                    for (unsigned int m = 0; m < count; m++) {
+                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                        for (NSString *kw in mKws) {
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                                HWSLog([NSString stringWithFormat:@"🎯 发现目标: -[%@ %@]", clsName, mName]);
+                                break;
+                            }
+                        }
+                    }
+                    if (methods) free(methods);
+                    
+                    methods = class_copyMethodList(object_getClass((id)classes[i]), &count);
+                    for (unsigned int m = 0; m < count; m++) {
+                        NSString *mName = NSStringFromSelector(method_getName(methods[m]));
+                        for (NSString *kw in mKws) {
+                            if ([mName localizedCaseInsensitiveContainsString:kw]) {
+                                HWSLog([NSString stringWithFormat:@"🎯 发现目标: +[%@ %@]", clsName, mName]);
+                                break;
+                            }
+                        }
+                    }
+                    if (methods) free(methods);
+                }
+                free(classes);
+                HWSLog(@"🎯🎯🎯 ====== 精准扫描完成 ======\n\n");
+            });
+
+            HWSLog(@"\n======== [v4.23] 触发底层传输 ========");
             
-            // 延迟初始化动态 Hook，确保类已经加载到内存中
+            // 延迟初始化动态 Hook
             Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
             Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
             if (wifiCls || storeCls) {
-                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d，正在注入底层协议拦截器！", (wifiCls != nil), (storeCls != nil)]);
+                HWSLog([NSString stringWithFormat:@"✅ 成功获取动态类句柄: WiFi:%d Store:%d，正在注入！", (wifiCls != nil), (storeCls != nil)]);
                 %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls);
             } else {
-                HWSLog(@"❌ 获取动态类句柄失败，类名尚未注册。");
+                HWSLog(@"❌ 获取动态类句柄失败。");
             }
         });
 
