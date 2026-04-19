@@ -467,9 +467,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.48: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.49: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.48] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.49] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -501,10 +501,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 }
                 free(classes);
                 // 只打印总数，不打印每个方法（避免几百行噪音）
-                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.48] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.49] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.48] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.49] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -914,7 +914,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.48"
+        alertControllerWithTitle:@"HAP 侧载 v4.49"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
@@ -945,13 +945,23 @@ static NSString *dumpTargetClasses() {
         }]];
     }
 
-    [m addAction:[UIAlertAction actionWithTitle:@"查看底层监控日志"
+    [m addAction:[UIAlertAction actionWithTitle:@"查看底层监控日志(最新150条)"
         style:UIAlertActionStyleDefault handler:^(id a) {
-        NSString *logStr = (g_logs && g_logs.count > 0) ? [g_logs componentsJoinedByString:@"\n"] : @"暂无监控日志。请先[开启劫持]并去市场安装。";
+        NSString *logStr = @"暂无监控日志。请先[开启劫持]并去市场安装。";
+        if (g_logs && g_logs.count > 0) {
+            // ⚡ 关键：只复制最后 150 条，确保看到传输末尾的失败信息！
+            NSUInteger total = g_logs.count;
+            NSUInteger start = total > 150 ? total - 150 : 0;
+            NSArray *recent = [g_logs subarrayWithRange:NSMakeRange(start, total - start)];
+            logStr = [recent componentsJoinedByString:@"\n"];
+        }
         UIPasteboard *pb = [UIPasteboard generalPasteboard];
         [pb setString:logStr];
-        [self alert:@"日志已复制" msg:[NSString stringWithFormat:@"已抓取 %lu 条文件/网络行为监控记录，已复制到剪贴板！去黏贴发给 AI 分析看后缀是啥！", (unsigned long)g_logs.count]];
+        NSUInteger cnt = g_logs ? g_logs.count : 0;
+        NSUInteger show = cnt > 150 ? 150 : cnt;
+        [self alert:@"日志已复制(最新150条)" msg:[NSString stringWithFormat:@"总共 %lu 条，已复制最新 %lu 条到剪贴板！这次粘贴出来的是末尾的失败信息！", (unsigned long)cnt, (unsigned long)show]];
     }]];
+
 
     [m addAction:[UIAlertAction actionWithTitle:@"取消"
         style:UIAlertActionStyleCancel handler:nil]];
