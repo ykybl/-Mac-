@@ -78,6 +78,24 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
     return 0; // errSecSuccess
 }
 
+// 绕过手机端 .hap 证书验证（旧版 API）
+typedef OSStatus (*SecTrustEvaluate_func)(SecTrustRef trust, SecTrustResultType *result);
+static SecTrustEvaluate_func orig_SecTrustEvaluate;
+static OSStatus my_SecTrustEvaluate(SecTrustRef trust, SecTrustResultType *result) {
+    HWSLog(@"🔐 [CertBypass] SecTrustEvaluate 被拦截！强制返回信任！");
+    if (result) *result = kSecTrustResultProceed;
+    return noErr;
+}
+
+// 绕过手机端 .hap 证书验证（新版 API）
+typedef bool (*SecTrustEvaluateWithError_func)(SecTrustRef trust, CFErrorRef *error);
+static SecTrustEvaluateWithError_func orig_SecTrustEvaluateWithError;
+static bool my_SecTrustEvaluateWithError(SecTrustRef trust, CFErrorRef *error) {
+    HWSLog(@"🔐 [CertBypass] SecTrustEvaluateWithError 被拦截！强制返回 YES！");
+    if (error) *error = NULL;
+    return YES;
+}
+
 // ============================================================================
 // Part 2: 网络层 Bundle ID 注入 (精准伪装，不影响内部路由)
 // ============================================================================
@@ -293,7 +311,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 BOOL errCodeChanged = (curErrCode != lastErrCode);
                 BOOL progressMilestone = (progBucket != lastProgress25);
                 
-                if (statusChanged || errCodeChanged || progressMilestone) {
+                // status!=5(传输中)的状态变化【永远】打印，5 才限制 25% 里程碑
+                BOOL shouldLog = statusChanged || errCodeChanged ||
+                                 (curStatus != 5) || progressMilestone;
+                if (shouldLog) {
                     id errAttach = [statusInfo valueForKey:@"errAttachment"];
                     HWSLog([NSString stringWithFormat:@"  📌 statusInfo变化 -> status=%ld progress=%ld errorCode=%ld errAttach=%@",
                         (long)curStatus, (long)curProgress, (long)curErrCode, errAttach]);
@@ -484,9 +505,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.50: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.51: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.50] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.51] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -518,10 +539,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 }
                 free(classes);
                 // 只打印总数，不打印每个方法（避免几百行噪音）
-                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.50] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.51] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.50] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.51] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -931,7 +952,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.50"
+        alertControllerWithTitle:@"HAP 侧载 v4.51"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
@@ -1089,11 +1110,19 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        struct rebinding rb[1];
+        // 【关键】同时绑定 SecTrustEvaluate 系列，绕过 .hap 证书验证！
+        struct rebinding rb[3];
         rb[0].name = "SecCodeCheckValidity";
         rb[0].replacement = (void *)my_SecCodeCheckValidity;
         rb[0].replaced = (void **)&orig_SecCodeCheckValidity;
-        rebind_symbols((struct rebinding *)rb, 1);
+        rb[1].name = "SecTrustEvaluate";
+        rb[1].replacement = (void *)my_SecTrustEvaluate;
+        rb[1].replaced = (void **)&orig_SecTrustEvaluate;
+        rb[2].name = "SecTrustEvaluateWithError";
+        rb[2].replacement = (void *)my_SecTrustEvaluateWithError;
+        rb[2].replaced = (void **)&orig_SecTrustEvaluateWithError;
+        int hookResult = rebind_symbols((struct rebinding *)rb, 3);
+        HWSLog([NSString stringWithFormat:@"🔐 [CertBypass] fishhook 绑定结果: %d (0=成功)", hookResult]);
         
         CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
             appDidBecomeActive, (CFStringRef)UIApplicationDidBecomeActiveNotification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
