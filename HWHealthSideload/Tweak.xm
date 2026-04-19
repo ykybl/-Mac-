@@ -397,6 +397,14 @@ static void replacePathAndSizeInFileInfo(id info) {
     HWSLog(@"╬═══════════════════════════════╬\n");
     @try { dumpObjectProperties(self, @"FileMgr最终状态"); } @catch (...) {}
 
+    // ====== 🛑 v4.53 关键修复：立刻关闭拦截！======
+    // 根本原因：传输完成后手表会立刻请求其他文件(如 ab08691c_comtencentxin_1.bin 腾讯通知图标包)
+    // 如果 g_intercept 不关闭，这些文件也会被错误替换为 HAP，导致安装失败！
+    if (g_intercept) {
+        g_intercept = NO;
+        HWSLog(@"🔒 [v4.53 关键修复] g_intercept 已关闭！后续文件下载不再被劫持");
+    }
+
     // ====== 一次性 dump WSSCommonFileMgr 全部方法名，找 sendInstall* 方法 ======
     static dispatch_once_t methodDumpOnce;
     Class selfClass = object_getClass(self); // 避免 forward declaration 报错
@@ -541,9 +549,9 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"💥 劫持 moveItemAtURL! 准备进行全宇宙扫描探测传输接口...");
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            // v4.52: 精准扫描，去除了会误杀的 ble 和 ota
+            // v4.53: 精准扫描，去除了会误杀的 ble 和 ota
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.52] 开始绝对精准探测底层传输接口 ======");
+                HWSLog(@"\n\n🎯🎯🎯 ====== [v4.53] 开始绝对精准探测底层传输接口 ======");
                 
                 NSArray *mKws = @[@"sendfile", @"transferfile", @"pushfile", @"installapp", @"sendpkg", @"transferpkg", @"startinstall", @"senddata", @"p2psend"];
                 
@@ -575,10 +583,10 @@ static void replacePathAndSizeInFileInfo(id info) {
                 }
                 free(classes);
                 // 只打印总数，不打印每个方法（避免几百行噪音）
-                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.52] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
+                HWSLog([NSString stringWithFormat:@"🎯🎯🎯 ====== [v4.53] 扫描完成，共发现 %d 个关联方法 ======", discovered]);
             });
 
-            HWSLog(@"\n======== [v4.52] 触发底层传输 ========");
+            HWSLog(@"\n======== [v4.53] 触发底层传输 ========");
             // SideloadHooks 已被移动至 %ctor 进行早期全局初始化，避免竞争遗漏
         });
 
@@ -998,7 +1006,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.52"
+        alertControllerWithTitle:@"HAP 侧载 v4.53"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
