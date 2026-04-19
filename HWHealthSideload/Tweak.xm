@@ -234,6 +234,16 @@ static BOOL isTargetExt(NSString *path) {
                 free(classes);
                 HWSLog(@"🎯🎯🎯 ====== 全宇宙扫描完成，请查看上方 [🎯🎯] 标记的方法 ======\n\n");
             });
+            
+            // v4.21: 延迟初始化动态 Hook，确保类已经加载到内存中
+            Class wifiCls = NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager");
+            Class storeCls = NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager");
+            if (wifiCls || storeCls) {
+                HWSLog(@"✅ 成功获取动态类句柄，正在注入底层协议拦截器！");
+                %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls);
+            } else {
+                HWSLog(@"❌ 获取动态类句柄失败，类名尚未注册。");
+            }
         });
 
         // 依然向原始文件放行，绕过 DRM 检查以命中传输逻辑
@@ -678,12 +688,9 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
 %ctor {
     // 立即捕获真实 Bundle ID，用于网络请求替换 (此时 hook 尚未生效，取到的是真实值)
     g_realBundleId = [[[NSBundle mainBundle] bundleIdentifier] copy];
-    NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
-
-    // Initialize Dynamic Hooks
-    NSLog(@"[HWSideload] Initializing SideloadHooks.");
+    // Initialize System Hooks
+    NSLog(@"[HWSideload] Initializing main hooks.");
     %init(_ungrouped);
-    %init(SideloadHooks, SHDWiFiTransferManager=NSClassFromString(@"HuaweiWear.SHDWiFiTransferManager"), SHWatchAppStoreManager=NSClassFromString(@"HuaweiWear.SHWatchAppStoreManager"));
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
 
     dispatch_async(dispatch_get_main_queue(), ^{
