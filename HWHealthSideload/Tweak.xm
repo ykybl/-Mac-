@@ -18,6 +18,7 @@ static NSFileHandle *g_hapFileHandle = nil;
 static long long g_hapFileSize = 0;
 static NSInteger g_hapChunkSize = 0;       // 从第一包探针获取的块大小
 static NSString  *g_hapOffsetKey = nil;    // 从第一包探针获取的 offset 属性名
+static NSInteger g_utilChunkCount = 0;        // WSSCommonFileMgrSendUtil 数据块计数器
 
 // ============================================================================
 // Part 0: Log Collector
@@ -502,8 +503,6 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 
 %end
-
-static NSInteger g_utilChunkCount = 0;
 
 %hook WSSCommonFileMgrSendUtil
 
