@@ -563,7 +563,7 @@ static void replacePathAndSizeInFileInfo(id info) {
 
         // Dump fileData 前128字节 HEX（判断是否有包头）
         NSUInteger previewLen = MIN(128, fileData.length);
-        const uint8_t *bytes = fileData.bytes;
+        const uint8_t *bytes = (const uint8_t *)fileData.bytes;
         NSMutableString *hex = [NSMutableString string];
         for (NSUInteger i = 0; i < previewLen; i++) {
             [hex appendFormat:@"%02X ", bytes[i]];
