@@ -1,4 +1,4 @@
-#import <UIKit/UIKit.h>
+﻿#import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <fishhook.h>
@@ -14,6 +14,10 @@ static NSString *g_hapChecksum = nil;
 static NSString *g_hapMD5 = nil;
 static NSString *g_hapSHA1 = nil;
 static BOOL     g_intercept = NO;
+static NSFileHandle *g_hapFileHandle = nil;
+static long long g_hapFileSize = 0;
+static NSInteger g_hapChunkSize = 0;       // 从第一包探针获取的块大小
+static NSString  *g_hapOffsetKey = nil;    // 从第一包探针获取的 offset 属性名
 
 // ============================================================================
 // Part 0: Log Collector
@@ -397,12 +401,17 @@ static void replacePathAndSizeInFileInfo(id info) {
     HWSLog(@"╬═══════════════════════════════╬\n");
     @try { dumpObjectProperties(self, @"FileMgr最终状态"); } @catch (...) {}
 
-    // ====== 🛑 v4.53 关键修复：立刻关闭拦截！======
-    // 根本原因：传输完成后手表会立刻请求其他文件(如 ab08691c_comtencentxin_1.bin 腾讯通知图标包)
-    // 如果 g_intercept 不关闭，这些文件也会被错误替换为 HAP，导致安装失败！
+    // ====== 🛑 v4.54 优化：延迟10秒关闭拦截 ======
+    // v4.53 立即关闭会导致后续安装协商消息无法被劫持。
+    // v4.54 改为延迟10秒关闭，既避免误劫持后续文件，又覆盖安装完成确认窗口。
     if (g_intercept) {
-        g_intercept = NO;
-        HWSLog(@"🔒 [v4.53 关键修复] g_intercept 已关闭！后续文件下载不再被劫持");
+        __weak typeof(self) weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            if (g_intercept) {
+                g_intercept = NO;
+                HWSLog(@"🔒 [v4.54] g_intercept 延迟关闭！");
+            }
+        });
     }
 
     // ====== 一次性 dump WSSCommonFileMgr 全部方法名，找 sendInstall* 方法 ======
@@ -494,23 +503,150 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %end
 
+static NSInteger g_utilChunkCount = 0;
+
 %hook WSSCommonFileMgrSendUtil
 
 // Util 版本的 sendFileCheckMode：不改 checkMode，直接放行！
 + (void)sendFileCheckMode:(NSInteger)checkMode deviceInfo:(id)deviceInfo fileInfo:(id)fileInfo fileid:(NSInteger)fileid offsetSize:(long long)offsetSize {
-    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileCheckMode!\n  ➤ checkMode = %ld (直接放行，不改！)", (long)checkMode]);
+    HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileCheckMode!\n  ➤ checkMode = %ld (直接放行，不改！)\n  ➤ fileid = %ld, offsetSize = %lld", (long)checkMode, (long)fileid, (long long)offsetSize]);
+
+    // v4.54: 每轮传输开始时重置块计数器
+    g_utilChunkCount = 0;
+
+    // 每包 dump fileInfo/deviceInfo 的属性，首次探针
+    static dispatch_once_t fOnce;
+    dispatch_once(&fOnce, ^{
+        if (fileInfo) dumpObjectProperties(fileInfo, @"[探针] sendFileCheckMode.fileInfo");
+        if (deviceInfo) dumpObjectProperties(deviceInfo, @"[探针] sendFileCheckMode.deviceInfo");
+    });
     %orig; // ← checkMode 保持原值=3，手表才不会拒绝！
 }
 
-// 开始发送文件内容（Util 版本）— 确认数据传输开始
+// 开始发送文件内容（Util 版本）— 核心数据替换点
 + (void)sendFileContentToDeviceWithDataInfo:(id)dataInfo fileData:(NSData *)fileData deviceInfo:(id)deviceInfo selectIndexArray:(id)selectIndexArray negotiate:(id)negotiate {
-    static NSInteger utilChunkCount = 0;
-    utilChunkCount++;
-    if (utilChunkCount == 1) {
-        HWSLog([NSString stringWithFormat:@"\n🟢🟢🟢 [WSSCommonFileMgrSendUtil] !!!! 数据传输开始！第一包大小: %lu 字节 !!!!", (unsigned long)fileData.length]);
-    } else if (utilChunkCount % 100 == 0) {
-        HWSLog([NSString stringWithFormat:@"🟢 [WSSCommonFileMgrSendUtil] 已发送分包数: %ld", (long)utilChunkCount]);
+    // ===== 第一包：完整探针 dump =====
+    static dispatch_once_t probeOnce;
+    dispatch_once(&probeOnce, ^{
+        HWSLog(@"\n\n╔══════════════════════════════════════╗");
+        HWSLog(@"║  🔬 [v4.54 探针] 第一包完整协议分析  ║");
+        HWSLog(@"╚══════════════════════════════════════╝");
+
+        // Dump dataInfo 属性
+        if (dataInfo) {
+            dumpObjectProperties(dataInfo, @"[探针] dataInfo");
+        } else {
+            HWSLog(@"⚠️ [探针] dataInfo == nil");
+        }
+
+        // Dump negotiate 属性
+        if (negotiate) {
+            dumpObjectProperties(negotiate, @"[探针] negotiate");
+        } else {
+            HWSLog(@"⚠️ [探针] negotiate == nil");
+        }
+
+        // Dump deviceInfo 属性
+        if (deviceInfo) {
+            dumpObjectProperties(deviceInfo, @"[探针] deviceInfo");
+        }
+
+        // Dump selectIndexArray
+        if (selectIndexArray) {
+            HWSLog([NSString stringWithFormat:@"[探针] selectIndexArray class=%@ count=%@",
+                NSStringFromClass([selectIndexArray class]), @([selectIndexArray count])]);
+            if ([selectIndexArray count] > 0) {
+                HWSLog([NSString stringWithFormat:@"[探针] selectIndexArray[0]=%@", selectIndexArray[0]]);
+            }
+        } else {
+            HWSLog(@"⚠️ [探针] selectIndexArray == nil");
+        }
+
+        // Dump fileData 前128字节 HEX（判断是否有包头）
+        NSUInteger previewLen = MIN(128, fileData.length);
+        const uint8_t *bytes = fileData.bytes;
+        NSMutableString *hex = [NSMutableString string];
+        for (NSUInteger i = 0; i < previewLen; i++) {
+            [hex appendFormat:@"%02X ", bytes[i]];
+            if ((i + 1) % 16 == 0) [hex appendString:@"\n"];
+        }
+        HWSLog([NSString stringWithFormat:@"[探针] fileData 前128字节:\n%@", hex]);
+        HWSLog([NSString stringWithFormat:@"[探针] fileData.length = %lu 字节", (unsigned long)fileData.length]);
+
+        // 自动发现 offset 字段名
+        if (dataInfo) {
+            unsigned int count;
+            objc_property_t *props = class_copyPropertyList([dataInfo class], &count);
+            for (unsigned int i = 0; i < count; i++) {
+                NSString *pName = [NSString stringWithUTF8String:property_getName(props[i])];
+                NSString *lp = pName.lowercaseString;
+                if ([lp containsString:@"offset"] || [lp containsString:@"seek"] || [lp containsString:@"pos"]) {
+                    g_hapOffsetKey = pName;
+                    id val = [dataInfo valueForKey:pName];
+                    HWSLog([NSString stringWithFormat:@"🔑 [探针] 发现 offset 字段: %@ = %@", pName, val]);
+                }
+            }
+            if (!g_hapOffsetKey) {
+                HWSLog(@"⚠️ [探针] 未自动发现 offset 字段，将使用 dataInfo 全属性查找");
+                g_hapOffsetKey = @"__unresolved__";
+            }
+            if (props) free(props);
+        }
+
+        g_hapChunkSize = (NSInteger)fileData.length;
+        HWSLog([NSString stringWithFormat:@"[探针] 记录块大小 = %ld 字节", (long)g_hapChunkSize]);
+        HWSLog(@"══════════════════════════════════════\n");
+    });
+
+    // ===== 实际数据替换逻辑 =====
+    if (g_intercept && g_hapPath && g_hapFileHandle && fileData.length > 0) {
+        g_utilChunkCount++;
+
+        // 尝试从 dataInfo 获取 offset
+        long long offset = -1;
+        if (g_hapOffsetKey && ![g_hapOffsetKey isEqualToString:@"__unresolved__"]) {
+            @try {
+                id val = [dataInfo valueForKey:g_hapOffsetKey];
+                offset = [val longLongValue];
+            } @catch (...) {}
+        }
+
+        // 如果 offset 未解析，用块序号推算
+        if (offset < 0) {
+            offset = (g_utilChunkCount - 1) * (long long)fileData.length;
+        }
+
+        // 从 HAP 文件读取对应偏移的数据
+        @try {
+            [g_hapFileHandle seekToFileOffset:(unsigned long long)offset];
+            NSData *hapChunk = [g_hapFileHandle readDataOfLength:fileData.length];
+
+            if (hapChunk && hapChunk.length > 0) {
+                if (g_utilChunkCount == 1 || g_utilChunkCount % 100 == 0) {
+                    HWSLog([NSString stringWithFormat:@"🔄 [v4.54 替换] 块#%ld offset=%lld origSize=%lu hapSize=%lu => 已替换!",
+                        (long)g_utilChunkCount, offset, (unsigned long)fileData.length, (unsigned long)hapChunk.length]);
+                }
+
+                // 如果 hapChunk 小于 fileData，需要补齐（用 0x00）
+                if (hapChunk.length < fileData.length) {
+                    HWSLog([NSString stringWithFormat:@"⚠️ [v4.54] 最后一块：HAP 读回 %lu < 原始 %lu，补齐零字节",
+                        (unsigned long)hapChunk.length, (unsigned long)fileData.length]);
+                    NSMutableData *padded = [hapChunk mutableCopy];
+                    [padded increaseLengthBy:fileData.length - hapChunk.length];
+                    hapChunk = padded;
+                }
+
+                // 调用原始方法，传入替换后的数据
+                %orig(dataInfo, hapChunk, deviceInfo, selectIndexArray, negotiate);
+                return;
+            } else {
+                HWSLog([NSString stringWithFormat:@"⚠️ [v4.54] 偏移 %lld 读取失败或已EOF (块#%ld)", offset, (long)g_utilChunkCount]);
+            }
+        } @catch (NSException *e) {
+            HWSLog([NSString stringWithFormat:@"❌ [v4.54] 文件读取异常: %@", e]);
+        }
     }
+
     %orig;
 }
 
@@ -1091,12 +1227,22 @@ static NSString *dumpTargetClasses() {
     if (a) [src stopAccessingSecurityScopedResource];
 
     if (!err) {
+        // 关闭旧句柄
+        if (g_hapFileHandle) { [g_hapFileHandle closeFile]; g_hapFileHandle = nil; }
+
         g_hapPath = [dst copy];
         g_hapChecksum = fileSHA256(g_hapPath);
         g_hapMD5 = fileMD5(g_hapPath);
         g_hapSHA1 = fileSHA1(g_hapPath);
         NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
-        unsigned long long sz = [at fileSize];
+        g_hapFileSize = [at fileSize];
+        g_hapFileHandle = [NSFileHandle fileHandleForReadingAtPath:dst];
+        if (!g_hapFileHandle) {
+            HWSLog(@"❌ 无法打开 HAP 文件句柄！");
+        } else {
+            HWSLog([NSString stringWithFormat:@"✅ HAP 文件句柄已打开，size=%lld", g_hapFileSize]);
+        }
+        unsigned long long sz = g_hapFileSize;
         
         UIAlertController *a = [UIAlertController alertControllerWithTitle:@"准备就绪"
             message:[NSString stringWithFormat:@"已加载文件: %@\n大小: %.1f MB\n\n【重要】请输入您自己应用的包名 (Bundle ID，如 com.yourapp.watch):\n※ 如果您已经在表中修改了与载体一致则可留空", [dst lastPathComponent], sz/1048576.0]
