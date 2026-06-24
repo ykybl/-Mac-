@@ -110,17 +110,17 @@ static bool my_SecTrustEvaluateWithError(SecTrustRef trust, CFErrorRef *error) {
 %hook NSBundle
 - (NSString *)bundleIdentifier {
     NSString *orig = %orig;
+    if (!g_intercept) return orig; // 只有用户点击“开启劫持”后才伪装，避免影响 App 正常启动和本地缓存读取！
     
     // 获取调用者的地址信息
     void *addr = __builtin_return_address(0);
     Dl_info info;
     if (dladdr(addr, &info) != 0 && info.dli_fname != NULL) {
-        // 仅当调用者是主程序或者华为 SDK 相关库时才进行伪装 (使用 C 字符串查找极大地提升性能，避免看门狗超时)
+        // 仅当调用者是主程序或者华为 SDK 相关库时才进行伪装
         if (strstr(info.dli_fname, "HuaweiWear") || 
             strstr(info.dli_fname, "SHSports") || 
             strstr(info.dli_fname, "iossporthealth")) {
             
-            // 只要不是官方 bundle ID，就替换为官方的
             if (![orig isEqualToString:@"com.huawei.iossporthealth"]) {
                 static dispatch_once_t onceLog;
                 dispatch_once(&onceLog, ^{
@@ -135,6 +135,8 @@ static bool my_SecTrustEvaluateWithError(SecTrustRef trust, CFErrorRef *error) {
 
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     id orig = %orig;
+    if (!g_intercept) return orig; // 只有在需要劫持时才伪装
+    
     if ([key isEqualToString:@"CFBundleIdentifier"]) {
         void *addr = __builtin_return_address(0);
         Dl_info info;
@@ -1232,36 +1234,40 @@ static NSString *dumpTargetClasses() {
 }
 
 - (void)attach:(UIWindow *)w {
-    if (self.btn) return;
+    if (!self.btn) {
+        CGFloat sw = [UIScreen mainScreen].bounds.size.width;
+        CGFloat sh = [UIScreen mainScreen].bounds.size.height;
 
-    CGFloat sw = [UIScreen mainScreen].bounds.size.width;
-    CGFloat sh = [UIScreen mainScreen].bounds.size.height;
+        self.btn = [UIButton buttonWithType:UIButtonTypeSystem];
+        self.btn.frame = CGRectMake(sw - 135, sh - 160, 120, 50);
+        self.btn.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
+        [self.btn setTitle:@"侧载" forState:UIControlStateNormal];
+        self.btn.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+        [self.btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        self.btn.layer.cornerRadius = 25;
+        self.btn.layer.shadowColor = [UIColor blackColor].CGColor;
+        self.btn.layer.shadowOffset = CGSizeMake(0, 3);
+        self.btn.layer.shadowOpacity = 0.4;
+        self.btn.layer.zPosition = 99999;
 
-    self.btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.btn.frame = CGRectMake(sw - 135, sh - 160, 120, 50);
-    self.btn.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.15 alpha:0.95];
-    [self.btn setTitle:@"侧载" forState:UIControlStateNormal];
-    self.btn.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-    [self.btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.btn.layer.cornerRadius = 25;
-    self.btn.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.btn.layer.shadowOffset = CGSizeMake(0, 3);
-    self.btn.layer.shadowOpacity = 0.4;
-    self.btn.layer.zPosition = 99999;
-
-    [self.btn addTarget:self action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];
+        [self.btn addTarget:self action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];
+        
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
+            initWithTarget:self action:@selector(drag:)];
+        [self.btn addGestureRecognizer:pan];
+    }
     
+    // 从旧的父视图移除
+    [self.btn removeFromSuperview];
+
     UIViewController *vc = w.rootViewController;
     if (vc && vc.view) {
         [vc.view addSubview:self.btn];
         [vc.view bringSubviewToFront:self.btn];
     } else {
         [w addSubview:self.btn];
+        [w bringSubviewToFront:self.btn];
     }
-
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
-        initWithTarget:self action:@selector(drag:)];
-    [self.btn addGestureRecognizer:pan];
 }
 
 - (void)drag:(UIPanGestureRecognizer *)r {
@@ -1426,12 +1432,19 @@ static NSString *dumpTargetClasses() {
 %hook UIWindow
 - (void)makeKeyAndVisible {
     %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [[HWSideloadUI shared] attach:self];
+    });
 }
 %end
 
 static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     UIWindow *k = [UIApplication sharedApplication].keyWindow;
-    if (k) [[HWSideloadUI shared] attach:k];
+    if (k) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [[HWSideloadUI shared] attach:k];
+        });
+    }
 }
 
 %ctor {
