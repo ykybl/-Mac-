@@ -496,6 +496,74 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %hook WSSCommonFileMgr
 
+// ===== v5.0 核心：在文件进入传输队列前，替换文件源头 =====
+- (void)addTaskWithFile:(id)fileInfo {
+    if (g_intercept && g_hapPath && fileInfo) {
+        @try {
+            NSInteger fileType = [[fileInfo valueForKey:@"fileType"] integerValue];
+            NSString *origPath = [fileInfo valueForKey:@"filePath"];
+            NSString *origName = [fileInfo valueForKey:@"fileName"];
+            
+            HWSLog([NSString stringWithFormat:@"\n🎯 [v5.0] addTaskWithFile!\n  ➤ fileType=%ld fileName=%@ filePath=%@", (long)fileType, origName, origPath]);
+            dumpObjectProperties(fileInfo, @"[v5.0] addTaskWithFile 原始 fileInfo");
+            
+            // fileType=6 是应用包(.bin)，fileType=7 是配置文件(contacts.json等)
+            if (fileType == 6) {
+                HWSLog(@"🔥🔥🔥 [v5.0 路线B] 检测到应用包传输！执行文件源头替换！");
+                
+                // 1. 替换 filePath
+                [fileInfo setValue:g_hapPath forKey:@"filePath"];
+                HWSLog([NSString stringWithFormat:@"  ✅ filePath: %@ → %@", origPath, g_hapPath]);
+                
+                // 2. 替换 fileSize
+                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+                if (attrs) {
+                    long long hapSize = [attrs fileSize];
+                    [fileInfo setValue:@(hapSize) forKey:@"fileSize"];
+                    HWSLog([NSString stringWithFormat:@"  ✅ fileSize → %lld", hapSize]);
+                }
+                
+                // 3. 清空 sha256Result，让底层引擎重新计算
+                @try { [fileInfo setValue:nil forKey:@"sha256Result"]; } @catch (...) {}
+                HWSLog(@"  ✅ sha256Result → nil (底层将重新计算)");
+                
+                // 4. 禁用校验
+                @try { [fileInfo setValue:@(0) forKey:@"isNeedVerify"]; } @catch (...) {}
+                
+                dumpObjectProperties(fileInfo, @"[v5.0] addTaskWithFile 替换后 fileInfo");
+            }
+        } @catch (NSException *e) {
+            HWSLog([NSString stringWithFormat:@"❌ [v5.0] addTaskWithFile 替换异常: %@", e]);
+        }
+    } else if (fileInfo) {
+        HWSLog([NSString stringWithFormat:@"\n📋 [v5.0] addTaskWithFile (未劫持): fileName=%@ fileType=%@",
+            [fileInfo valueForKey:@"fileName"], [fileInfo valueForKey:@"fileType"]]);
+    }
+    %orig;
+}
+
+// v5.0: transFileToDevice 双保险
+- (void)transFileToDevice:(id)fileInfo device:(id)device callback:(id)callback {
+    if (g_intercept && g_hapPath && fileInfo) {
+        @try {
+            NSInteger fileType = [[fileInfo valueForKey:@"fileType"] integerValue];
+            if (fileType == 6) {
+                NSString *curPath = [fileInfo valueForKey:@"filePath"];
+                if (![curPath isEqualToString:g_hapPath]) {
+                    HWSLog(@"🔥 [v5.0] transFileToDevice 二次保险触发！");
+                    [fileInfo setValue:g_hapPath forKey:@"filePath"];
+                    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+                    if (attrs) [fileInfo setValue:@([attrs fileSize]) forKey:@"fileSize"];
+                    @try { [fileInfo setValue:nil forKey:@"sha256Result"]; } @catch (...) {}
+                }
+            }
+        } @catch (NSException *e) {
+            HWSLog([NSString stringWithFormat:@"❌ [v5.0] transFileToDevice 异常: %@", e]);
+        }
+    }
+    %orig;
+}
+
 // 手表端返回文件传输协商结果时调用，errorCode 就是手表告诉我们的错误原因
 - (void)sendFileTransferNegotiate:(id)negotiate errorCode:(NSInteger)errorCode {
     HWSLog([NSString stringWithFormat:@"\n🔴 [WSSCommonFileMgr] sendFileTransferNegotiate!\n  ➤ errorCode = %ld\n  ➤ negotiate = %@", (long)errorCode, negotiate]);
@@ -705,57 +773,25 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"══════════════════════════════════════\n");
     });
 
-    // ===== 实际数据替换逻辑 =====
-    if (g_intercept && g_hapPath && g_hapFileHandle && fileData.length > 0) {
-        g_utilChunkCount++;
-
-        // 尝试从 dataInfo 获取 offset
-        long long offset = -1;
-        if (g_hapOffsetKey && ![g_hapOffsetKey isEqualToString:@"__unresolved__"]) {
-            @try {
-                id val = [dataInfo valueForKey:g_hapOffsetKey];
-                offset = [val longLongValue];
-            } @catch (...) {}
-        }
-
-        // 如果 offset 未解析，用块序号推算
-        if (offset < 0) {
-            offset = (g_utilChunkCount - 1) * (long long)fileData.length;
-        }
-
-        // 从 HAP 文件读取对应偏移的数据
-        @try {
-            [g_hapFileHandle seekToFileOffset:(unsigned long long)offset];
-            NSData *hapChunk = [g_hapFileHandle readDataOfLength:fileData.length];
-
-            if (hapChunk && hapChunk.length > 0) {
-                if (g_utilChunkCount == 1 || g_utilChunkCount % 100 == 0) {
-                    HWSLog([NSString stringWithFormat:@"🔄 [v4.54 替换] 块#%ld offset=%lld origSize=%lu hapSize=%lu => 已替换!",
-                        (long)g_utilChunkCount, offset, (unsigned long)fileData.length, (unsigned long)hapChunk.length]);
-                }
-
-                // 如果 hapChunk 小于 fileData，需要补齐（用 0x00）
-                if (hapChunk.length < fileData.length) {
-                    HWSLog([NSString stringWithFormat:@"⚠️ [v4.54] 最后一块：HAP 读回 %lu < 原始 %lu，补齐零字节",
-                        (unsigned long)hapChunk.length, (unsigned long)fileData.length]);
-                    NSMutableData *padded = [hapChunk mutableCopy];
-                    [padded increaseLengthBy:fileData.length - hapChunk.length];
-                    hapChunk = padded;
-                }
-
-                // 调用原始方法，传入替换后的数据
-                %orig(dataInfo, hapChunk, deviceInfo, selectIndexArray, negotiate);
-                return;
-            } else {
-                HWSLog([NSString stringWithFormat:@"⚠️ [v4.54] 偏移 %lld 读取失败或已EOF (块#%ld)", offset, (long)g_utilChunkCount]);
-            }
-        } @catch (NSException *e) {
-            HWSLog([NSString stringWithFormat:@"❌ [v4.54] 文件读取异常: %@", e]);
-        }
-    }
-
+    // v5.0: 数据流替换已移除，改用源头替换（addTaskWithFile）
     %orig;
 }
+
+// v5.0: Hook 文件数据读取（三重保险）
++ (NSData *)readFileDataFrom:(NSString *)filePath offsetSize:(long long)offsetSize {
+    if (g_intercept && g_hapPath && filePath) {
+        if (isTargetExt(filePath) && ![filePath isEqualToString:g_hapPath]) {
+            static dispatch_once_t readOnce;
+            dispatch_once(&readOnce, ^{
+                HWSLog([NSString stringWithFormat:@"🔥 [v5.0] readFileDataFrom 三重保险触发! %@ → %@", filePath.lastPathComponent, g_hapPath.lastPathComponent]);
+            });
+            return %orig(g_hapPath, offsetSize);
+        }
+    }
+    return %orig;
+}
+
+
 
 // 文件传输协商发送，errorCode 是我们反馈给手表的值
 + (void)sendFileTransferNegotiate:(id)negotiate deviceInfo:(id)deviceInfo errorCode:(NSInteger)errorCode {
@@ -1249,7 +1285,7 @@ static NSString *dumpTargetClasses() {
 
     // 使用 Alert 样式而非 ActionSheet，避免干扰 TabBar
     UIAlertController *m = [UIAlertController
-        alertControllerWithTitle:@"HAP 侧载 v4.53"
+        alertControllerWithTitle:@"HAP 侧载 v5.0"
         message:st preferredStyle:UIAlertControllerStyleAlert];
 
     [m addAction:[UIAlertAction actionWithTitle:@"选择 .hap 文件"
