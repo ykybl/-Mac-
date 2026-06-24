@@ -15,7 +15,7 @@ jobs:
         run: |
           export THEOS=~/theos
           cd HWHealthSideload
-          make 2> error.log || true
+          make > error.log 2>&1 || true
           cat error.log
           cp error.log ../error.log
           cd ..
