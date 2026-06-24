@@ -704,6 +704,11 @@ static void replacePathAndSizeInFileInfo(id info) {
         if (fileInfo) dumpObjectProperties(fileInfo, @"[探针] sendFileCheckMode.fileInfo");
         if (deviceInfo) dumpObjectProperties(deviceInfo, @"[探针] sendFileCheckMode.deviceInfo");
     });
+    // v5.1: 进一步保险，如果 fileInfo 存在，在此时替换属性
+    if (g_intercept && fileInfo) {
+        replacePathAndSizeInFileInfo(fileInfo);
+    }
+    
     %orig; // ← checkMode 保持原值=3，手表才不会拒绝！
 }
 
@@ -782,12 +787,7 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"══════════════════════════════════════\n");
     });
 
-    // v5.1: 进一步保险，如果 fileInfo 存在，在此时替换属性
-    if (g_intercept && fileInfo) {
-        replacePathAndSizeInFileInfo(fileInfo);
-    }
-    
-    %orig; // ← checkMode 保持原值=3，手表才不会拒绝！
+    %orig;
 }
 
 // 移除可能引起崩溃的 readFileDataFrom Hook，改为钩取模型属性
