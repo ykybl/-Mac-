@@ -21,8 +21,11 @@ static NSString  *g_hapOffsetKey = nil;    // 从第一包探针获取的 offset
 static NSInteger g_utilChunkCount = 0;        // WSSCommonFileMgrSendUtil 数据块计数器
 
 // ============================================================================
-// Part 0: Log Collector
+// Part 0: Log Collector & Interfaces
 // ============================================================================
+
+@interface WSSCommonFileInfo : NSObject
+@end
 
 static NSMutableArray *g_logs = nil;
 static void HWSLog(NSString *msg) {
