@@ -1459,9 +1459,7 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
     dispatch_async(dispatch_get_main_queue(), ^{
         // 【关键】绑定证书绕过
         struct Rebinding rb[] = {
-            {"SecCodeCheckValidity", (void *)my_SecCodeCheckValidity, (void **)&orig_SecCodeCheckValidity},
-            {"SecTrustEvaluate", (void *)my_SecTrustEvaluate, (void **)&orig_SecTrustEvaluate},
-            {"SecTrustEvaluateWithError", (void *)my_SecTrustEvaluateWithError, (void **)&orig_SecTrustEvaluateWithError}
+            {"SecCodeCheckValidity", (void *)my_SecCodeCheckValidity, (void **)&orig_SecCodeCheckValidity}
         };
         int hookResult = rebind_symbols(rb, sizeof(rb)/sizeof(struct Rebinding));
         HWSLog([NSString stringWithFormat:@"🛡️ [Fishhook] 绑定环境检测绕过结果: %d (0=成功)", hookResult]);
