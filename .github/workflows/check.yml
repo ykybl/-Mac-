@@ -1,0 +1,26 @@
+name: Check Syntax
+on: [push]
+permissions:
+  contents: write
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Theos
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+      - name: Compile and Push Log
+        run: |
+          export THEOS=~/theos
+          cd HWHealthSideload
+          make 2> error.log || true
+          cat error.log
+          cp error.log ../error.log
+          cd ..
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add error.log
+          git commit -m "Auto upload compile error log" || true
+          git push || true
