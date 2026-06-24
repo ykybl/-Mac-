@@ -403,6 +403,9 @@ static void replacePathAndSizeInFileInfo(id info) {
 // ============================================================================
 @interface HWSLogViewer : UIViewController
 @property (nonatomic, strong) UITextView *textView;
+- (void)refreshLogs;
+- (void)copyLogs;
+- (void)dismiss;
 @end
 
 @implementation HWSLogViewer
@@ -414,7 +417,7 @@ static void replacePathAndSizeInFileInfo(id info) {
     title.text = @"HAP 侧载监控日志";
     title.textColor = [UIColor whiteColor];
     title.textAlignment = NSTextAlignmentCenter;
-    title.font = [UIFont boldSystemFontSize:16];
+    title.font = [UIFont boldSystemFontOfSize:16];
     [self.view addSubview:title];
     
     self.textView = [[UITextView alloc] initWithFrame:CGRectMake(10, 80, self.view.bounds.size.width - 20, self.view.bounds.size.height - 160)];
