@@ -398,6 +398,80 @@ static void replacePathAndSizeInFileInfo(id info) {
     }
 }
 
+// ============================================================================
+// Part 3.6: Log Viewer UI
+// ============================================================================
+@interface HWSLogViewer : UIViewController
+@property (nonatomic, strong) UITextView *textView;
+@end
+
+@implementation HWSLogViewer
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
+    
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, self.view.bounds.size.width, 30)];
+    title.text = @"HAP 侧载监控日志";
+    title.textColor = [UIColor whiteColor];
+    title.textAlignment = NSTextAlignmentCenter;
+    title.font = [UIFont boldSystemFontSize:16];
+    [self.view addSubview:title];
+    
+    self.textView = [[UITextView alloc] initWithFrame:CGRectMake(10, 80, self.view.bounds.size.width - 20, self.view.bounds.size.height - 160)];
+    self.textView.backgroundColor = [UIColor clearColor];
+    self.textView.textColor = [UIColor colorWithRed:0.2 green:0.9 blue:0.2 alpha:1.0];
+    self.textView.font = [UIFont fontWithName:@"Menlo" size:11];
+    self.textView.editable = NO;
+    self.textView.layoutManager.allowsNonContiguousLayout = NO;
+    [self.view addSubview:self.textView];
+    
+    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeBtn.frame = CGRectMake(20, self.view.bounds.size.height - 60, self.view.bounds.size.width/2 - 30, 40);
+    closeBtn.backgroundColor = [UIColor darkGrayColor];
+    closeBtn.layer.cornerRadius = 8;
+    [closeBtn setTitle:@"关闭" forState:UIControlStateNormal];
+    [closeBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [closeBtn addTarget:self action:@selector(dismiss) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:closeBtn];
+    
+    UIButton *copyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    copyBtn.frame = CGRectMake(self.view.bounds.size.width/2 + 10, self.view.bounds.size.height - 60, self.view.bounds.size.width/2 - 30, 40);
+    copyBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:1.0];
+    copyBtn.layer.cornerRadius = 8;
+    [copyBtn setTitle:@"复制全部" forState:UIControlStateNormal];
+    [copyBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [copyBtn addTarget:self action:@selector(copyLogs) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:copyBtn];
+    
+    [self refreshLogs];
+    
+    // Auto refresh timer
+    [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(refreshLogs) userInfo:nil repeats:YES];
+}
+
+- (void)refreshLogs {
+    if (g_logs) {
+        self.textView.text = [g_logs componentsJoinedByString:@"\n"];
+        // 自动滚动到底部
+        if (self.textView.text.length > 0) {
+            NSRange range = NSMakeRange(self.textView.text.length - 1, 1);
+            [self.textView scrollRangeToVisible:range];
+        }
+    }
+}
+
+- (void)copyLogs {
+    if (g_logs) {
+        UIPasteboard *pb = [UIPasteboard generalPasteboard];
+        [pb setString:[g_logs componentsJoinedByString:@"\n"]];
+    }
+}
+
+- (void)dismiss {
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+@end
+
 %group SideloadHooks
 
 %hook NSNotificationCenter
@@ -496,73 +570,8 @@ static void replacePathAndSizeInFileInfo(id info) {
 
 %hook WSSCommonFileMgr
 
-// ===== v5.0 核心：在文件进入传输队列前，替换文件源头 =====
-- (void)addTaskWithFile:(id)fileInfo {
-    if (g_intercept && g_hapPath && fileInfo) {
-        @try {
-            NSInteger fileType = [[fileInfo valueForKey:@"fileType"] integerValue];
-            NSString *origPath = [fileInfo valueForKey:@"filePath"];
-            NSString *origName = [fileInfo valueForKey:@"fileName"];
-            
-            HWSLog([NSString stringWithFormat:@"\n🎯 [v5.0] addTaskWithFile!\n  ➤ fileType=%ld fileName=%@ filePath=%@", (long)fileType, origName, origPath]);
-            dumpObjectProperties(fileInfo, @"[v5.0] addTaskWithFile 原始 fileInfo");
-            
-            // fileType=6 是应用包(.bin)，fileType=7 是配置文件(contacts.json等)
-            if (fileType == 6) {
-                HWSLog(@"🔥🔥🔥 [v5.0 路线B] 检测到应用包传输！执行文件源头替换！");
-                
-                // 1. 替换 filePath
-                [fileInfo setValue:g_hapPath forKey:@"filePath"];
-                HWSLog([NSString stringWithFormat:@"  ✅ filePath: %@ → %@", origPath, g_hapPath]);
-                
-                // 2. 替换 fileSize
-                NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
-                if (attrs) {
-                    long long hapSize = [attrs fileSize];
-                    [fileInfo setValue:@(hapSize) forKey:@"fileSize"];
-                    HWSLog([NSString stringWithFormat:@"  ✅ fileSize → %lld", hapSize]);
-                }
-                
-                // 3. 清空 sha256Result，让底层引擎重新计算
-                @try { [fileInfo setValue:nil forKey:@"sha256Result"]; } @catch (...) {}
-                HWSLog(@"  ✅ sha256Result → nil (底层将重新计算)");
-                
-                // 4. 禁用校验
-                @try { [fileInfo setValue:@(0) forKey:@"isNeedVerify"]; } @catch (...) {}
-                
-                dumpObjectProperties(fileInfo, @"[v5.0] addTaskWithFile 替换后 fileInfo");
-            }
-        } @catch (NSException *e) {
-            HWSLog([NSString stringWithFormat:@"❌ [v5.0] addTaskWithFile 替换异常: %@", e]);
-        }
-    } else if (fileInfo) {
-        HWSLog([NSString stringWithFormat:@"\n📋 [v5.0] addTaskWithFile (未劫持): fileName=%@ fileType=%@",
-            [fileInfo valueForKey:@"fileName"], [fileInfo valueForKey:@"fileType"]]);
-    }
-    %orig;
-}
-
-// v5.0: transFileToDevice 双保险
-- (void)transFileToDevice:(id)fileInfo device:(id)device callback:(id)callback {
-    if (g_intercept && g_hapPath && fileInfo) {
-        @try {
-            NSInteger fileType = [[fileInfo valueForKey:@"fileType"] integerValue];
-            if (fileType == 6) {
-                NSString *curPath = [fileInfo valueForKey:@"filePath"];
-                if (![curPath isEqualToString:g_hapPath]) {
-                    HWSLog(@"🔥 [v5.0] transFileToDevice 二次保险触发！");
-                    [fileInfo setValue:g_hapPath forKey:@"filePath"];
-                    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
-                    if (attrs) [fileInfo setValue:@([attrs fileSize]) forKey:@"fileSize"];
-                    @try { [fileInfo setValue:nil forKey:@"sha256Result"]; } @catch (...) {}
-                }
-            }
-        } @catch (NSException *e) {
-            HWSLog([NSString stringWithFormat:@"❌ [v5.0] transFileToDevice 异常: %@", e]);
-        }
-    }
-    %orig;
-}
+// 移除了容易导致崩溃的 addTaskWithFile: 和 transFileToDevice: Hook
+// 改用底层属性 Hook 和 SendUtil Hook 进行更安全的替换
 
 // 手表端返回文件传输协商结果时调用，errorCode 就是手表告诉我们的错误原因
 - (void)sendFileTransferNegotiate:(id)negotiate errorCode:(NSInteger)errorCode {
@@ -773,30 +782,71 @@ static void replacePathAndSizeInFileInfo(id info) {
         HWSLog(@"══════════════════════════════════════\n");
     });
 
-    // v5.0: 数据流替换已移除，改用源头替换（addTaskWithFile）
-    %orig;
-}
-
-// v5.0: Hook 文件数据读取（三重保险）
-+ (NSData *)readFileDataFrom:(NSString *)filePath offsetSize:(long long)offsetSize {
-    if (g_intercept && g_hapPath && filePath) {
-        if (isTargetExt(filePath) && ![filePath isEqualToString:g_hapPath]) {
-            static dispatch_once_t readOnce;
-            dispatch_once(&readOnce, ^{
-                HWSLog([NSString stringWithFormat:@"🔥 [v5.0] readFileDataFrom 三重保险触发! %@ → %@", filePath.lastPathComponent, g_hapPath.lastPathComponent]);
-            });
-            return %orig(g_hapPath, offsetSize);
-        }
+    // v5.1: 进一步保险，如果 fileInfo 存在，在此时替换属性
+    if (g_intercept && fileInfo) {
+        replacePathAndSizeInFileInfo(fileInfo);
     }
-    return %orig;
+    
+    %orig; // ← checkMode 保持原值=3，手表才不会拒绝！
 }
 
-
+// 移除可能引起崩溃的 readFileDataFrom Hook，改为钩取模型属性
 
 // 文件传输协商发送，errorCode 是我们反馈给手表的值
 + (void)sendFileTransferNegotiate:(id)negotiate deviceInfo:(id)deviceInfo errorCode:(NSInteger)errorCode {
     HWSLog([NSString stringWithFormat:@"\n🟡 [WSSCommonFileMgrSendUtil] sendFileTransferNegotiate!\n  ➤ errorCode = %ld", (long)errorCode]);
     %orig;
+}
+
+%end
+
+// ===== v5.1 核心：直接拦截 WSSCommonFileInfo 数据模型，避免方法签名不匹配崩溃 =====
+%hook WSSCommonFileInfo
+
+- (NSString *)filePath {
+    NSString *orig = %orig;
+    if (g_intercept && g_hapPath && orig) {
+        if ([orig containsString:@".bin"] || [orig containsString:@".hap"] || [orig containsString:@".pkg"]) {
+            // HWSLog([NSString stringWithFormat:@"🔥 [WSSCommonFileInfo] filePath 拦截返回: %@", g_hapPath.lastPathComponent]); // 避免刷屏
+            return g_hapPath;
+        }
+    }
+    return orig;
+}
+
+- (long long)fileSize {
+    long long orig = %orig;
+    if (g_intercept && g_hapPath && orig > 0) {
+        NSString *path = [self valueForKey:@"filePath"]; // 这里会调到上面的被劫持方法
+        if ([path isEqualToString:g_hapPath]) {
+            NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:g_hapPath error:nil];
+            if (attrs) {
+                return [attrs fileSize];
+            }
+        }
+    }
+    return orig;
+}
+
+- (NSString *)sha256Result {
+    NSString *orig = %orig;
+    if (g_intercept && g_hapPath) {
+        NSString *path = [self valueForKey:@"filePath"];
+        if ([path isEqualToString:g_hapPath]) {
+            return nil; // 强制底层重新计算
+        }
+    }
+    return orig;
+}
+
+- (BOOL)isNeedVerify {
+    if (g_intercept && g_hapPath) {
+        NSString *path = [self valueForKey:@"filePath"];
+        if ([path isEqualToString:g_hapPath]) {
+            return NO; // 禁用校验
+        }
+    }
+    return %orig;
 }
 
 %end
@@ -1316,21 +1366,13 @@ static NSString *dumpTargetClasses() {
         }]];
     }
 
-    [m addAction:[UIAlertAction actionWithTitle:@"查看底层监控日志(最新150条)"
+    [m addAction:[UIAlertAction actionWithTitle:@"查看实时监控日志"
         style:UIAlertActionStyleDefault handler:^(id a) {
-        NSString *logStr = @"暂无监控日志。请先[开启劫持]并去市场安装。";
-        if (g_logs && g_logs.count > 0) {
-            // 只复制最后 300 条，确保看到传输终止的失败信息
-            NSUInteger total = g_logs.count;
-            NSUInteger start = total > 300 ? total - 300 : 0;
-            NSArray *recent = [g_logs subarrayWithRange:NSMakeRange(start, total - start)];
-            logStr = [recent componentsJoinedByString:@"\n"];
-        }
-        UIPasteboard *pb = [UIPasteboard generalPasteboard];
-        [pb setString:logStr];
-        NSUInteger cnt = g_logs ? g_logs.count : 0;
-        NSUInteger show = cnt > 150 ? 150 : cnt;
-        [self alert:@"日志已复制(最新150条)" msg:[NSString stringWithFormat:@"总共 %lu 条，已复制最新 %lu 条到剪贴板！这次粘贴出来的是末尾的失败信息！", (unsigned long)cnt, (unsigned long)show]];
+        HWSLogViewer *viewer = [[HWSLogViewer alloc] init];
+        viewer.modalPresentationStyle = UIModalPresentationOverFullScreen;
+        UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
+        while (vc.presentedViewController) vc = vc.presentedViewController;
+        [vc presentViewController:viewer animated:YES completion:nil];
     }]];
 
 
