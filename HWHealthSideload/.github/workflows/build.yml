@@ -1,0 +1,32 @@
+name: Build iOS Dylib
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # 传入 Token 解决 API 限速问题
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          
+      - name: Compile Tweak
+        run: |
+          export THEOS=~/theos
+          if [ -d "HWHealthSideload" ]; then cd HWHealthSideload; fi
+          make
+          
+          mkdir -p ../OUTPUT_DYLIB
+          find . -name "*.dylib" -exec cp {} ../OUTPUT_DYLIB/ \;
+          ls -la ../OUTPUT_DYLIB/
+          
+      - name: Upload Dylib Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: HWHealthSideload_v4_Dylib
+          path: OUTPUT_DYLIB/

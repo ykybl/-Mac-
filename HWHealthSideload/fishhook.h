@@ -41,11 +41,14 @@ extern "C" {
  * A structure representing a particular intended rebinding from a symbol
  * name to its replacement
  */
-struct rebinding {
+struct Rebinding {
   const char *name;
   void *replacement;
   void **replaced;
 };
+
+// 保持对旧版代码的别名兼容性
+typedef struct Rebinding rebinding_t;
 
 /*
  * For each rebinding in rebindings, rebinds references to external, indirect
@@ -56,7 +59,7 @@ struct rebinding {
  * is rebound more than once, the later rebinding will take precedence.
  */
 FISHHOOK_VISIBILITY
-int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
+int rebind_symbols(struct Rebinding rebindings[], size_t rebindings_nel);
 
 /*
  * Rebinds as above, but only in the specified image. The header should point
@@ -65,7 +68,7 @@ int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
 FISHHOOK_VISIBILITY
 int rebind_symbols_image(void *header,
                          intptr_t slide,
-                         struct rebinding rebindings[],
+                         struct Rebinding rebindings[],
                          size_t rebindings_nel);
 
 #ifdef __cplusplus

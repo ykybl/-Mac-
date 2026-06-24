@@ -54,27 +54,27 @@ typedef struct nlist nlist_t;
 #define SEG_DATA_CONST  "__DATA_CONST"
 #endif
 
-struct rebindings_entry {
-  struct rebinding *rebindings;
+struct RebindingsEntry {
+  struct Rebinding *rebindings;
   size_t rebindings_nel;
-  struct rebindings_entry *next;
+  struct RebindingsEntry *next;
 };
 
-static struct rebindings_entry *_rebindings_head;
+static struct RebindingsEntry *_rebindingsHead;
 
-static int prepend_rebindings(struct rebindings_entry **rebindings_head,
-                              struct rebinding rebindings[],
+static int prepend_rebindings(struct RebindingsEntry **rebindings_head,
+                              struct Rebinding rebindings[],
                               size_t nel) {
-  struct rebindings_entry *new_entry = (struct rebindings_entry *) malloc(sizeof(struct rebindings_entry));
+  struct RebindingsEntry *new_entry = (struct RebindingsEntry *) malloc(sizeof(struct RebindingsEntry));
   if (!new_entry) {
     return -1;
   }
-  new_entry->rebindings = (struct rebinding *) malloc(sizeof(struct rebinding) * nel);
+  new_entry->rebindings = (struct Rebinding *) malloc(sizeof(struct Rebinding) * nel);
   if (!new_entry->rebindings) {
     free(new_entry);
     return -1;
   }
-  memcpy(new_entry->rebindings, rebindings, sizeof(struct rebinding) * nel);
+  memcpy(new_entry->rebindings, rebindings, sizeof(struct Rebinding) * nel);
   new_entry->rebindings_nel = nel;
   new_entry->next = *rebindings_head;
   *rebindings_head = new_entry;
@@ -111,7 +111,43 @@ static int get_protection(void *addr, vm_prot_t *prot, vm_prot_t *max_prot) {
 }
 #endif
 
-static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
+static bool check_and_apply_rebinding(struct RebindingsEntry *entry,
+                                      const char *symbol_name,
+                                      void **binding_addr,
+                                      size_t section_size) {
+  for (uint j = 0; j < entry->rebindings_nel; j++) {
+    if (strcmp(&symbol_name[1], entry->rebindings[j].name) == 0) {
+      if (entry->rebindings[j].replaced != NULL && *binding_addr != entry->rebindings[j].replacement) {
+        *(entry->rebindings[j].replaced) = *binding_addr;
+      }
+      kern_return_t err = vm_protect(mach_task_self(), (uintptr_t)binding_addr, section_size, 0, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+      if (err == KERN_SUCCESS) {
+        *binding_addr = entry->rebindings[j].replacement;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool try_rebind_symbol(const char *symbol_name,
+                              void **binding_addr,
+                              struct RebindingsEntry *rebindings,
+                              size_t section_size) {
+  if (!symbol_name || symbol_name[0] == '\0' || symbol_name[1] == '\0') {
+    return false;
+  }
+  struct RebindingsEntry *cur = rebindings;
+  while (cur) {
+    if (check_and_apply_rebinding(cur, symbol_name, binding_addr, section_size)) {
+      return true;
+    }
+    cur = cur->next;
+  }
+  return false;
+}
+
+static void perform_rebinding_with_section(struct RebindingsEntry *rebindings,
                                            section_t *section,
                                            intptr_t slide,
                                            nlist_t *symtab,
@@ -123,48 +159,80 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
   for (uint i = 0; i < section->size / sizeof(void *); i++) {
     uint32_t symtab_index = indirect_symbol_indices[i];
     if (symtab_index == INDIRECT_SYMBOL_ABS || symtab_index == INDIRECT_SYMBOL_LOCAL ||
-        symtab_index == (INDIRECT_SYMBOL_LOCAL   | INDIRECT_SYMBOL_ABS)) {
+        symtab_index == (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS)) {
       continue;
     }
     uint32_t strtab_offset = symtab[symtab_index].n_un.n_strx;
     char *symbol_name = strtab + strtab_offset;
-    bool symbol_name_longer_than_1 = symbol_name[0] && symbol_name[1];
-    struct rebindings_entry *cur = rebindings;
-    while (cur) {
-      for (uint j = 0; j < cur->rebindings_nel; j++) {
-        if (symbol_name_longer_than_1 && strcmp(&symbol_name[1], cur->rebindings[j].name) == 0) {
-          kern_return_t err;
-
-          if (cur->rebindings[j].replaced != NULL && indirect_symbol_bindings[i] != cur->rebindings[j].replacement)
-            *(cur->rebindings[j].replaced) = indirect_symbol_bindings[i];
-
-          /**
-           * 1. Moved the vm protection modifying codes to here to reduce the
-           *    changing scope.
-           * 2. Adding VM_PROT_WRITE mode unconditionally because vm_region
-           *    API on some iOS/Mac reports mismatch vm protection attributes.
-           * -- Lianfu Hao Jun 16th, 2021
-           **/
-          err = vm_protect (mach_task_self (), (uintptr_t)indirect_symbol_bindings, section->size, 0, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-          if (err == KERN_SUCCESS) {
-            /**
-             * Once we failed to change the vm protection, we
-             * MUST NOT continue the following write actions!
-             * iOS 15 has corrected the const segments prot.
-             * -- Lionfore Hao Jun 11th, 2021
-             **/
-            indirect_symbol_bindings[i] = cur->rebindings[j].replacement;
-          }
-          goto symbol_loop;
-        }
-      }
-      cur = cur->next;
-    }
-  symbol_loop:;
+    try_rebind_symbol(symbol_name, &indirect_symbol_bindings[i], rebindings, section->size);
   }
 }
 
-static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
+static void parse_segment_command(segment_command_t *seg_cmd,
+                                  segment_command_t **linkedit,
+                                  struct symtab_command **symtab,
+                                  struct dysymtab_command **dysymtab) {
+  if (seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
+    if (strcmp(seg_cmd->segname, SEG_LINKEDIT) == 0) {
+      *linkedit = seg_cmd;
+    }
+  } else if (seg_cmd->cmd == LC_SYMTAB) {
+    *symtab = (struct symtab_command*)seg_cmd;
+  } else if (seg_cmd->cmd == LC_DYSYMTAB) {
+    *dysymtab = (struct dysymtab_command*)seg_cmd;
+  }
+}
+
+static bool find_linkedit_and_symtabs(const mach_header_t *header,
+                                      segment_command_t **linkedit_segment,
+                                      struct symtab_command **symtab_cmd,
+                                      struct dysymtab_command **dysymtab_cmd) {
+  uintptr_t cur = (uintptr_t)header + sizeof(mach_header_t);
+  for (uint i = 0; i < header->ncmds; i++) {
+    segment_command_t *cur_seg_cmd = (segment_command_t *)cur;
+    parse_segment_command(cur_seg_cmd, linkedit_segment, symtab_cmd, dysymtab_cmd);
+    cur += cur_seg_cmd->cmdsize;
+  }
+  return (*symtab_cmd && *dysymtab_cmd && *linkedit_segment && (*dysymtab_cmd)->nindirectsyms > 0);
+}
+
+static void rebind_sections_in_segment(segment_command_t *seg_cmd,
+                                       uintptr_t segment_addr,
+                                       struct RebindingsEntry *rebindings,
+                                       intptr_t slide,
+                                       nlist_t *symtab,
+                                       char *strtab,
+                                       uint32_t *indirect_symtab) {
+  for (uint j = 0; j < seg_cmd->nsects; j++) {
+    section_t *sect = (section_t *)(segment_addr + sizeof(segment_command_t)) + j;
+    uint32_t sect_type = sect->flags & SECTION_TYPE;
+    if (sect_type == S_LAZY_SYMBOL_POINTERS || sect_type == S_NON_LAZY_SYMBOL_POINTERS) {
+      perform_rebinding_with_section(rebindings, sect, slide, symtab, strtab, indirect_symtab);
+    }
+  }
+}
+
+static void rebind_data_sections(const mach_header_t *header,
+                                 struct RebindingsEntry *rebindings,
+                                 intptr_t slide,
+                                 nlist_t *symtab,
+                                 char *strtab,
+                                 uint32_t *indirect_symtab) {
+  uintptr_t cur = (uintptr_t)header + sizeof(mach_header_t);
+  for (uint i = 0; i < header->ncmds; i++) {
+    segment_command_t *cur_seg_cmd = (segment_command_t *)cur;
+    if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
+      bool is_data_seg = (strcmp(cur_seg_cmd->segname, SEG_DATA) == 0);
+      bool is_data_const_seg = (strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) == 0);
+      if (is_data_seg || is_data_const_seg) {
+        rebind_sections_in_segment(cur_seg_cmd, cur, rebindings, slide, symtab, strtab, indirect_symtab);
+      }
+    }
+    cur += cur_seg_cmd->cmdsize;
+  }
+}
+
+static void rebind_symbols_for_image(struct RebindingsEntry *rebindings,
                                      const struct mach_header *header,
                                      intptr_t slide) {
   Dl_info info;
@@ -172,87 +240,47 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
     return;
   }
 
-  segment_command_t *cur_seg_cmd;
   segment_command_t *linkedit_segment = NULL;
   struct symtab_command* symtab_cmd = NULL;
   struct dysymtab_command* dysymtab_cmd = NULL;
 
-  uintptr_t cur = (uintptr_t)header + sizeof(mach_header_t);
-  for (uint i = 0; i < header->ncmds; i++, cur += cur_seg_cmd->cmdsize) {
-    cur_seg_cmd = (segment_command_t *)cur;
-    if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
-      if (strcmp(cur_seg_cmd->segname, SEG_LINKEDIT) == 0) {
-        linkedit_segment = cur_seg_cmd;
-      }
-    } else if (cur_seg_cmd->cmd == LC_SYMTAB) {
-      symtab_cmd = (struct symtab_command*)cur_seg_cmd;
-    } else if (cur_seg_cmd->cmd == LC_DYSYMTAB) {
-      dysymtab_cmd = (struct dysymtab_command*)cur_seg_cmd;
-    }
-  }
-
-  if (!symtab_cmd || !dysymtab_cmd || !linkedit_segment ||
-      !dysymtab_cmd->nindirectsyms) {
+  if (!find_linkedit_and_symtabs((const mach_header_t *)header, &linkedit_segment, &symtab_cmd, &dysymtab_cmd)) {
     return;
   }
 
-  // Find base symbol/string table addresses
   uintptr_t linkedit_base = (uintptr_t)slide + linkedit_segment->vmaddr - linkedit_segment->fileoff;
   nlist_t *symtab = (nlist_t *)(linkedit_base + symtab_cmd->symoff);
   char *strtab = (char *)(linkedit_base + symtab_cmd->stroff);
-
-  // Get indirect symbol table (array of uint32_t indices into symbol table)
   uint32_t *indirect_symtab = (uint32_t *)(linkedit_base + dysymtab_cmd->indirectsymoff);
 
-  cur = (uintptr_t)header + sizeof(mach_header_t);
-  for (uint i = 0; i < header->ncmds; i++, cur += cur_seg_cmd->cmdsize) {
-    cur_seg_cmd = (segment_command_t *)cur;
-    if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
-      if (strcmp(cur_seg_cmd->segname, SEG_DATA) != 0 &&
-          strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) != 0) {
-        continue;
-      }
-      for (uint j = 0; j < cur_seg_cmd->nsects; j++) {
-        section_t *sect =
-          (section_t *)(cur + sizeof(segment_command_t)) + j;
-        if ((sect->flags & SECTION_TYPE) == S_LAZY_SYMBOL_POINTERS) {
-          perform_rebinding_with_section(rebindings, sect, slide, symtab, strtab, indirect_symtab);
-        }
-        if ((sect->flags & SECTION_TYPE) == S_NON_LAZY_SYMBOL_POINTERS) {
-          perform_rebinding_with_section(rebindings, sect, slide, symtab, strtab, indirect_symtab);
-        }
-      }
-    }
-  }
+  rebind_data_sections((const mach_header_t *)header, rebindings, slide, symtab, strtab, indirect_symtab);
 }
 
 static void _rebind_symbols_for_image(const struct mach_header *header,
                                       intptr_t slide) {
-    rebind_symbols_for_image(_rebindings_head, header, slide);
+  rebind_symbols_for_image(_rebindingsHead, header, slide);
 }
 
 int rebind_symbols_image(void *header,
                          intptr_t slide,
-                         struct rebinding rebindings[],
+                         struct Rebinding rebindings[],
                          size_t rebindings_nel) {
-    struct rebindings_entry *rebindings_head = NULL;
-    int retval = prepend_rebindings(&rebindings_head, rebindings, rebindings_nel);
-    rebind_symbols_for_image(rebindings_head, (const struct mach_header *) header, slide);
-    if (rebindings_head) {
-      free(rebindings_head->rebindings);
-    }
-    free(rebindings_head);
-    return retval;
+  struct RebindingsEntry *rebindings_head = NULL;
+  int retval = prepend_rebindings(&rebindings_head, rebindings, rebindings_nel);
+  rebind_symbols_for_image(rebindings_head, (const struct mach_header *) header, slide);
+  if (rebindings_head) {
+    free(rebindings_head->rebindings);
+  }
+  free(rebindings_head);
+  return retval;
 }
 
-int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel) {
-  int retval = prepend_rebindings(&_rebindings_head, rebindings, rebindings_nel);
+int rebind_symbols(struct Rebinding rebindings[], size_t rebindings_nel) {
+  int retval = prepend_rebindings(&_rebindingsHead, rebindings, rebindings_nel);
   if (retval < 0) {
     return retval;
   }
-  // If this was the first call, register callback for image additions (which is also invoked for
-  // existing images, otherwise, just run on existing images
-  if (!_rebindings_head->next) {
+  if (!_rebindingsHead->next) {
     _dyld_register_func_for_add_image(_rebind_symbols_for_image);
   } else {
     uint32_t c = _dyld_image_count();
