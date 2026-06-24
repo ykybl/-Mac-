@@ -1,0 +1,220 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/runner/work/-Mac-/-Mac-/HWHealthSideload/.theos/obj/debug/arm64/HWHealthSideload.dylib'
+relocations:
+  - { offset: 0x1E, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer viewDidLoad]', symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x13B4 }
+  - { offset: 0x37, size: 0x8, addend: 0x0, symName: __ZL9g_hapPath, symObjAddr: 0x3EC48, symBinAddr: 0x24C10, symSize: 0x0 }
+  - { offset: 0xAE, size: 0x8, addend: 0x0, symName: __ZL13g_hapBundleID, symObjAddr: 0x3EC50, symBinAddr: 0x24C18, symSize: 0x0 }
+  - { offset: 0xC7, size: 0x8, addend: 0x0, symName: __ZL13g_hapChecksum, symObjAddr: 0x3EC58, symBinAddr: 0x24C20, symSize: 0x0 }
+  - { offset: 0xE0, size: 0x8, addend: 0x0, symName: __ZL8g_hapMD5, symObjAddr: 0x3EC60, symBinAddr: 0x24C28, symSize: 0x0 }
+  - { offset: 0xF9, size: 0x8, addend: 0x0, symName: __ZL9g_hapSHA1, symObjAddr: 0x3EC68, symBinAddr: 0x24C30, symSize: 0x0 }
+  - { offset: 0x112, size: 0x8, addend: 0x0, symName: __ZL15g_hapFileHandle, symObjAddr: 0x3EC70, symBinAddr: 0x24C38, symSize: 0x0 }
+  - { offset: 0x196, size: 0x8, addend: 0x0, symName: __ZL14g_hapOffsetKey, symObjAddr: 0x3EC78, symBinAddr: 0x24C40, symSize: 0x0 }
+  - { offset: 0x1AF, size: 0x8, addend: 0x0, symName: __ZL6g_logs, symObjAddr: 0x3EC80, symBinAddr: 0x24C48, symSize: 0x0 }
+  - { offset: 0x1FA, size: 0x8, addend: 0x0, symName: __ZL14g_realBundleId, symObjAddr: 0x3EC88, symBinAddr: 0x24C50, symSize: 0x0 }
+  - { offset: 0x207, size: 0x8, addend: 0x0, symName: '+[HWSideloadUI shared]', symObjAddr: 0x18F4, symBinAddr: 0x58F4, symSize: 0x7C }
+  - { offset: 0x232, size: 0x8, addend: 0x0, symName: '__ZZ22+[HWSideloadUI shared]E1s', symObjAddr: 0x3EC90, symBinAddr: 0x24C58, symSize: 0x0 }
+  - { offset: 0x248, size: 0x8, addend: 0x0, symName: '__ZZ22+[HWSideloadUI shared]E1t', symObjAddr: 0x3EC98, symBinAddr: 0x24C60, symSize: 0x0 }
+  - { offset: 0x2C57, size: 0x8, addend: 0x0, symName: __ZL11g_intercept, symObjAddr: 0x3ECA0, symBinAddr: 0x24C68, symSize: 0x0 }
+  - { offset: 0x2C70, size: 0x8, addend: 0x0, symName: __ZL13g_hapFileSize, symObjAddr: 0x3ECA8, symBinAddr: 0x24C70, symSize: 0x0 }
+  - { offset: 0x2C7D, size: 0x8, addend: 0x0, symName: '__ZL50_logos_method$_ungrouped$NSBundle$bundleIdentifierP8NSBundleP13objc_selector', symObjAddr: 0x6200, symBinAddr: 0xA200, symSize: 0x2C0 }
+  - { offset: 0x2CA6, size: 0x8, addend: 0x0, symName: '__ZZL50_logos_method$_ungrouped$NSBundle$bundleIdentifierP8NSBundleP13objc_selectorE7onceLog', symObjAddr: 0x3EE60, symBinAddr: 0x24E28, symSize: 0x0 }
+  - { offset: 0x2D2F, size: 0x8, addend: 0x0, symName: '__ZL48_logos_orig$_ungrouped$NSBundle$bundleIdentifier', symObjAddr: 0x3ECB0, symBinAddr: 0x24C78, symSize: 0x0 }
+  - { offset: 0x2EED, size: 0x8, addend: 0x0, symName: '__ZL59_logos_orig$_ungrouped$NSBundle$objectForInfoDictionaryKey$', symObjAddr: 0x3ECB8, symBinAddr: 0x24C80, symSize: 0x0 }
+  - { offset: 0x2F20, size: 0x8, addend: 0x0, symName: '__ZL55_logos_orig$_ungrouped$NSMutableURLRequest$initWithURL$', symObjAddr: 0x3ECC0, symBinAddr: 0x24C88, symSize: 0x0 }
+  - { offset: 0x31BE, size: 0x8, addend: 0x0, symName: '__ZL83_logos_orig$_ungrouped$NSMutableURLRequest$initWithURL$cachePolicy$timeoutInterval$', symObjAddr: 0x3ECC8, symBinAddr: 0x24C90, symSize: 0x0 }
+  - { offset: 0x31FB, size: 0x8, addend: 0x0, symName: '__ZL50_logos_orig$_ungrouped$NSMutableURLRequest$setURL$', symObjAddr: 0x3ECD0, symBinAddr: 0x24C98, symSize: 0x0 }
+  - { offset: 0x322F, size: 0x8, addend: 0x0, symName: '__ZL71_logos_orig$_ungrouped$NSMutableURLRequest$setValue$forHTTPHeaderField$', symObjAddr: 0x3ECD8, symBinAddr: 0x24CA0, symSize: 0x0 }
+  - { offset: 0x3263, size: 0x8, addend: 0x0, symName: '__ZL71_logos_orig$_ungrouped$NSMutableURLRequest$addValue$forHTTPHeaderField$', symObjAddr: 0x3ECE0, symBinAddr: 0x24CA8, symSize: 0x0 }
+  - { offset: 0x327C, size: 0x8, addend: 0x0, symName: '__ZL66_logos_orig$_ungrouped$NSMutableURLRequest$setAllHTTPHeaderFields$', symObjAddr: 0x3ECE8, symBinAddr: 0x24CB0, symSize: 0x0 }
+  - { offset: 0x32AB, size: 0x8, addend: 0x0, symName: '__ZL55_logos_orig$_ungrouped$NSMutableURLRequest$setHTTPBody$', symObjAddr: 0x3ECF0, symBinAddr: 0x24CB8, symSize: 0x0 }
+  - { offset: 0x32DA, size: 0x8, addend: 0x0, symName: '__ZL65_logos_orig$_ungrouped$NSFileManager$copyItemAtPath$toPath$error$', symObjAddr: 0x3ECF8, symBinAddr: 0x24CC0, symSize: 0x0 }
+  - { offset: 0x340D, size: 0x8, addend: 0x0, symName: '__ZL63_logos_orig$_ungrouped$NSFileManager$copyItemAtURL$toURL$error$', symObjAddr: 0x3ED00, symBinAddr: 0x24CC8, symSize: 0x0 }
+  - { offset: 0x344A, size: 0x8, addend: 0x0, symName: '__ZL65_logos_orig$_ungrouped$NSFileManager$moveItemAtPath$toPath$error$', symObjAddr: 0x3ED08, symBinAddr: 0x24CD0, symSize: 0x0 }
+  - { offset: 0x3457, size: 0x8, addend: 0x0, symName: '__ZL65_logos_method$_ungrouped$NSFileManager$moveItemAtURL$toURL$error$P13NSFileManagerP13objc_selectorP5NSURLS4_PU15__autoreleasingP7NSError', symObjAddr: 0x805C, symBinAddr: 0xC05C, symSize: 0x3C4 }
+  - { offset: 0x3482, size: 0x8, addend: 0x0, symName: '__ZZL65_logos_method$_ungrouped$NSFileManager$moveItemAtURL$toURL$error$P13NSFileManagerP13objc_selectorP5NSURLS4_PU15__autoreleasingP7NSErrorE9onceToken', symObjAddr: 0x3EE68, symBinAddr: 0x24E30, symSize: 0x0 }
+  - { offset: 0x350B, size: 0x8, addend: 0x0, symName: '__ZL63_logos_orig$_ungrouped$NSFileManager$moveItemAtURL$toURL$error$', symObjAddr: 0x3ED10, symBinAddr: 0x24CD8, symSize: 0x0 }
+  - { offset: 0x3524, size: 0x8, addend: 0x0, symName: '__ZL66_logos_orig$_ungrouped$NSFileManager$attributesOfItemAtPath$error$', symObjAddr: 0x3ED18, symBinAddr: 0x24CE0, symSize: 0x0 }
+  - { offset: 0x355D, size: 0x8, addend: 0x0, symName: __ZL16g_jsonHookActive, symObjAddr: 0x3EE70, symBinAddr: 0x24E38, symSize: 0x0 }
+  - { offset: 0x3576, size: 0x8, addend: 0x0, symName: '__ZL81_logos_meta_orig$_ungrouped$NSJSONSerialization$JSONObjectWithData$options$error$', symObjAddr: 0x3ED20, symBinAddr: 0x24CE8, symSize: 0x0 }
+  - { offset: 0x35C3, size: 0x8, addend: 0x0, symName: '__ZL53_logos_orig$_ungrouped$NSData$writeToFile$atomically$', symObjAddr: 0x3ED28, symBinAddr: 0x24CF0, symSize: 0x0 }
+  - { offset: 0x3600, size: 0x8, addend: 0x0, symName: '__ZL52_logos_orig$_ungrouped$NSData$writeToURL$atomically$', symObjAddr: 0x3ED30, symBinAddr: 0x24CF8, symSize: 0x0 }
+  - { offset: 0x3638, size: 0x8, addend: 0x0, symName: '__ZL58_logos_meta_orig$_ungrouped$NSData$dataWithContentsOfFile$', symObjAddr: 0x3ED38, symBinAddr: 0x24D00, symSize: 0x0 }
+  - { offset: 0x366B, size: 0x8, addend: 0x0, symName: '__ZL57_logos_meta_orig$_ungrouped$NSData$dataWithContentsOfURL$', symObjAddr: 0x3ED40, symBinAddr: 0x24D08, symSize: 0x0 }
+  - { offset: 0x369E, size: 0x8, addend: 0x0, symName: '__ZL67_logos_orig$_ungrouped$NSData$initWithContentsOfFile$options$error$', symObjAddr: 0x3ED48, symBinAddr: 0x24D10, symSize: 0x0 }
+  - { offset: 0x36E6, size: 0x8, addend: 0x0, symName: '__ZL66_logos_orig$_ungrouped$NSData$initWithContentsOfURL$options$error$', symObjAddr: 0x3ED50, symBinAddr: 0x24D18, symSize: 0x0 }
+  - { offset: 0x3723, size: 0x8, addend: 0x0, symName: '__ZL68_logos_meta_orig$_ungrouped$NSFileHandle$fileHandleForReadingAtPath$', symObjAddr: 0x3ED58, symBinAddr: 0x24D20, symSize: 0x0 }
+  - { offset: 0x3756, size: 0x8, addend: 0x0, symName: '__ZL68_logos_meta_orig$_ungrouped$NSInputStream$inputStreamWithFileAtPath$', symObjAddr: 0x3ED60, symBinAddr: 0x24D28, symSize: 0x0 }
+  - { offset: 0x382A, size: 0x8, addend: 0x0, symName: '__ZL56_logos_orig$_ungrouped$NSInputStream$initWithFileAtPath$', symObjAddr: 0x3ED68, symBinAddr: 0x24D30, symSize: 0x0 }
+  - { offset: 0x385D, size: 0x8, addend: 0x0, symName: '__ZL74_logos_orig$_ungrouped$NSURLSession$dataTaskWithRequest$completionHandler$', symObjAddr: 0x3ED70, symBinAddr: 0x24D38, symSize: 0x0 }
+  - { offset: 0x41E6, size: 0x8, addend: 0x0, symName: '__ZL49_logos_orig$_ungrouped$UIWindow$makeKeyAndVisible', symObjAddr: 0x3ED78, symBinAddr: 0x24D40, symSize: 0x0 }
+  - { offset: 0x4D08, size: 0x8, addend: 0x0, symName: __ZL25orig_SecCodeCheckValidity, symObjAddr: 0x3ED80, symBinAddr: 0x24D48, symSize: 0x0 }
+  - { offset: 0x4D5D, size: 0x8, addend: 0x0, symName: __ZL21orig_SecTrustEvaluate, symObjAddr: 0x3ED88, symBinAddr: 0x24D50, symSize: 0x0 }
+  - { offset: 0x4DF8, size: 0x8, addend: 0x0, symName: __ZL30orig_SecTrustEvaluateWithError, symObjAddr: 0x3ED90, symBinAddr: 0x24D58, symSize: 0x0 }
+  - { offset: 0x4E4B, size: 0x8, addend: 0x0, symName: __ZL11orig_ptrace, symObjAddr: 0x3ED98, symBinAddr: 0x24D60, symSize: 0x0 }
+  - { offset: 0x4EB4, size: 0x8, addend: 0x0, symName: __ZL11orig_sysctl, symObjAddr: 0x3EDA0, symBinAddr: 0x24D68, symSize: 0x0 }
+  - { offset: 0x4F0B, size: 0x8, addend: 0x0, symName: __ZL22orig__dyld_image_count, symObjAddr: 0x3EDA8, symBinAddr: 0x24D70, symSize: 0x0 }
+  - { offset: 0x4F2E, size: 0x8, addend: 0x0, symName: __ZL25orig__dyld_get_image_name, symObjAddr: 0x3EDB0, symBinAddr: 0x24D78, symSize: 0x0 }
+  - { offset: 0x4F57, size: 0x8, addend: 0x0, symName: __ZL11orig_access, symObjAddr: 0x3EDB8, symBinAddr: 0x24D80, symSize: 0x0 }
+  - { offset: 0x4F85, size: 0x8, addend: 0x0, symName: __ZL9orig_stat, symObjAddr: 0x3EDC0, symBinAddr: 0x24D88, symSize: 0x0 }
+  - { offset: 0x51A3, size: 0x8, addend: 0x0, symName: '__ZL86_logos_method$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$P20NSNotificationCenterP13objc_selectorP8NSStringP11objc_objectP12NSDictionary', symObjAddr: 0xBC3C, symBinAddr: 0xFC3C, symSize: 0x648 }
+  - { offset: 0x51CA, size: 0x8, addend: 0x0, symName: '__ZZL86_logos_method$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$P20NSNotificationCenterP13objc_selectorP8NSStringP11objc_objectP12NSDictionaryE13onceTokenDump', symObjAddr: 0x3EE78, symBinAddr: 0x24E40, symSize: 0x0 }
+  - { offset: 0x51E0, size: 0x8, addend: 0x0, symName: '__ZZL86_logos_method$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$P20NSNotificationCenterP13objc_selectorP8NSStringP11objc_objectP12NSDictionaryE10lastStatus', symObjAddr: 0x1A938, symBinAddr: 0x24BF8, symSize: 0x0 }
+  - { offset: 0x51F6, size: 0x8, addend: 0x0, symName: '__ZZL86_logos_method$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$P20NSNotificationCenterP13objc_selectorP8NSStringP11objc_objectP12NSDictionaryE11lastErrCode', symObjAddr: 0x1A940, symBinAddr: 0x24C00, symSize: 0x0 }
+  - { offset: 0x520C, size: 0x8, addend: 0x0, symName: '__ZZL86_logos_method$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$P20NSNotificationCenterP13objc_selectorP8NSStringP11objc_objectP12NSDictionaryE14lastProgress25', symObjAddr: 0x1A948, symBinAddr: 0x24C08, symSize: 0x0 }
+  - { offset: 0x535D, size: 0x8, addend: 0x0, symName: '__ZL84_logos_orig$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$', symObjAddr: 0x3EDC8, symBinAddr: 0x24D90, symSize: 0x0 }
+  - { offset: 0x53C9, size: 0x8, addend: 0x0, symName: '__ZL96_logos_meta_orig$SideloadHooks$SHDWiFiCommandSend$sendNotifiDeviceStartTransferFileWithFileInfo$', symObjAddr: 0x3EDD0, symBinAddr: 0x24D98, symSize: 0x0 }
+  - { offset: 0x53F9, size: 0x8, addend: 0x0, symName: '__ZL95_logos_meta_orig$SideloadHooks$SHDWiFiCommandSend$sendNotifiDeviceTransferFileInfoWithFileInfo$', symObjAddr: 0x3EDD8, symBinAddr: 0x24DA0, symSize: 0x0 }
+  - { offset: 0x5413, size: 0x8, addend: 0x0, symName: '__ZL71_logos_meta_orig$SideloadHooks$SHDWiFiCommandSend$sendTransferFileInfo$', symObjAddr: 0x3EDE0, symBinAddr: 0x24DA8, symSize: 0x0 }
+  - { offset: 0x542D, size: 0x8, addend: 0x0, symName: '__ZL75_logos_orig$SideloadHooks$SHDWiFiTransferManager$transferFileInfo$callback$', symObjAddr: 0x3EDE8, symBinAddr: 0x24DB0, symSize: 0x0 }
+  - { offset: 0x5467, size: 0x8, addend: 0x0, symName: '__ZL66_logos_orig$SideloadHooks$SHWatchAppStoreManager$pushFileProgress$', symObjAddr: 0x3EDF0, symBinAddr: 0x24DB8, symSize: 0x0 }
+  - { offset: 0x54D3, size: 0x8, addend: 0x0, symName: '__ZL79_logos_orig$SideloadHooks$WSSCommonFileMgr$sendFileTransferNegotiate$errorCode$', symObjAddr: 0x3EDF8, symBinAddr: 0x24DC0, symSize: 0x0 }
+  - { offset: 0x550B, size: 0x8, addend: 0x0, symName: '__ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl', symObjAddr: 0xC734, symBinAddr: 0x10734, symSize: 0x50C }
+  - { offset: 0x5532, size: 0x8, addend: 0x0, symName: '__ZZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorlE14methodDumpOnce', symObjAddr: 0x3EE80, symBinAddr: 0x24E48, symSize: 0x0 }
+  - { offset: 0x563B, size: 0x8, addend: 0x0, symName: '__ZL66_logos_orig$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$', symObjAddr: 0x3EE00, symBinAddr: 0x24DC8, symSize: 0x0 }
+  - { offset: 0x566B, size: 0x8, addend: 0x0, symName: '__ZL61_logos_orig$SideloadHooks$WSSCommonFileMgr$pausedTransferFile', symObjAddr: 0x3EE08, symBinAddr: 0x24DD0, symSize: 0x0 }
+  - { offset: 0x5689, size: 0x8, addend: 0x0, symName: '__ZL81_logos_method$SideloadHooks$WSSCommonFileMgr$sendFileContentToDeviceWithDataInfo$P16WSSCommonFileMgrP13objc_selectorP11objc_object', symObjAddr: 0xCC80, symBinAddr: 0x10C80, symSize: 0x198 }
+  - { offset: 0x56B0, size: 0x8, addend: 0x0, symName: '__ZZL81_logos_method$SideloadHooks$WSSCommonFileMgr$sendFileContentToDeviceWithDataInfo$P16WSSCommonFileMgrP13objc_selectorP11objc_objectE10chunkCount', symObjAddr: 0x3EE88, symBinAddr: 0x24E50, symSize: 0x0 }
+  - { offset: 0x56F4, size: 0x8, addend: 0x0, symName: '__ZL79_logos_orig$SideloadHooks$WSSCommonFileMgr$sendFileContentToDeviceWithDataInfo$', symObjAddr: 0x3EE10, symBinAddr: 0x24DD8, symSize: 0x0 }
+  - { offset: 0x5724, size: 0x8, addend: 0x0, symName: '__ZL79_logos_orig$SideloadHooks$WSSCommonFileMgr$sendFileCheckMode$fileid$offsetSize$', symObjAddr: 0x3EE18, symBinAddr: 0x24DE0, symSize: 0x0 }
+  - { offset: 0x5751, size: 0x8, addend: 0x0, symName: '__ZL92_logos_method$SideloadHooks$WSSCommonFileMgr$recevicedPushFileData$commondID$deviceIdentify$P16WSSCommonFileMgrP13objc_selectorP6NSDatalP8NSString', symObjAddr: 0xCEE8, symBinAddr: 0x10EE8, symSize: 0x390 }
+  - { offset: 0x5778, size: 0x8, addend: 0x0, symName: '__ZZL92_logos_method$SideloadHooks$WSSCommonFileMgr$recevicedPushFileData$commondID$deviceIdentify$P16WSSCommonFileMgrP13objc_selectorP6NSDatalP8NSStringE11chunk5count', symObjAddr: 0x3EE90, symBinAddr: 0x24E58, symSize: 0x0 }
+  - { offset: 0x5843, size: 0x8, addend: 0x0, symName: '__ZL90_logos_orig$SideloadHooks$WSSCommonFileMgr$recevicedPushFileData$commondID$deviceIdentify$', symObjAddr: 0x3EE20, symBinAddr: 0x24DE8, symSize: 0x0 }
+  - { offset: 0x5870, size: 0x8, addend: 0x0, symName: '__ZL114_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileCheckMode$deviceInfo$fileInfo$fileid$offsetSize$P10objc_classP13objc_selectorlP11objc_objectS4_lx', symObjAddr: 0xD278, symBinAddr: 0x11278, symSize: 0x2B4 }
+  - { offset: 0x5897, size: 0x8, addend: 0x0, symName: '__ZZL114_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileCheckMode$deviceInfo$fileInfo$fileid$offsetSize$P10objc_classP13objc_selectorlP11objc_objectS4_lxE5fOnce', symObjAddr: 0x3EEA0, symBinAddr: 0x24E68, symSize: 0x0 }
+  - { offset: 0x593F, size: 0x8, addend: 0x0, symName: __ZL16g_utilChunkCount, symObjAddr: 0x3EE98, symBinAddr: 0x24E60, symSize: 0x0 }
+  - { offset: 0x5959, size: 0x8, addend: 0x0, symName: '__ZL112_logos_meta_orig$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileCheckMode$deviceInfo$fileInfo$fileid$offsetSize$', symObjAddr: 0x3EE28, symBinAddr: 0x24DF0, symSize: 0x0 }
+  - { offset: 0x5990, size: 0x8, addend: 0x0, symName: '__ZL141_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileContentToDeviceWithDataInfo$fileData$deviceInfo$selectIndexArray$negotiate$P10objc_classP13objc_selectorP11objc_objectP6NSDataS4_S4_S4_', symObjAddr: 0xD52C, symBinAddr: 0x1152C, symSize: 0x2FC }
+  - { offset: 0x59B7, size: 0x8, addend: 0x0, symName: '__ZZL141_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileContentToDeviceWithDataInfo$fileData$deviceInfo$selectIndexArray$negotiate$P10objc_classP13objc_selectorP11objc_objectP6NSDataS4_S4_S4_E9probeOnce', symObjAddr: 0x3EEA8, symBinAddr: 0x24E70, symSize: 0x0 }
+  - { offset: 0x5A5F, size: 0x8, addend: 0x0, symName: __ZL14g_hapChunkSize, symObjAddr: 0x3EEB0, symBinAddr: 0x24E78, symSize: 0x0 }
+  - { offset: 0x5A79, size: 0x8, addend: 0x0, symName: '__ZL139_logos_meta_orig$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileContentToDeviceWithDataInfo$fileData$deviceInfo$selectIndexArray$negotiate$', symObjAddr: 0x3EE30, symBinAddr: 0x24DF8, symSize: 0x0 }
+  - { offset: 0x5ABD, size: 0x8, addend: 0x0, symName: '__ZL103_logos_meta_orig$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileTransferNegotiate$deviceInfo$errorCode$', symObjAddr: 0x3EE38, symBinAddr: 0x24E00, symSize: 0x0 }
+  - { offset: 0x5AF7, size: 0x8, addend: 0x0, symName: '__ZL52_logos_orig$SideloadHooks$WSSCommonFileInfo$filePath', symObjAddr: 0x3EE40, symBinAddr: 0x24E08, symSize: 0x0 }
+  - { offset: 0x5B40, size: 0x8, addend: 0x0, symName: '__ZL52_logos_orig$SideloadHooks$WSSCommonFileInfo$fileSize', symObjAddr: 0x3EE48, symBinAddr: 0x24E10, symSize: 0x0 }
+  - { offset: 0x5B6F, size: 0x8, addend: 0x0, symName: '__ZL56_logos_orig$SideloadHooks$WSSCommonFileInfo$sha256Result', symObjAddr: 0x3EE50, symBinAddr: 0x24E18, symSize: 0x0 }
+  - { offset: 0x5B89, size: 0x8, addend: 0x0, symName: '__ZL56_logos_orig$SideloadHooks$WSSCommonFileInfo$isNeedVerify', symObjAddr: 0x3EE58, symBinAddr: 0x24E20, symSize: 0x0 }
+  - { offset: 0x6CEA, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer viewDidLoad]', symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x13B4 }
+  - { offset: 0x6D4D, size: 0x8, addend: 0x0, symName: __ZL10CGRectMakedddd, symObjAddr: 0x13B4, symBinAddr: 0x53B4, symSize: 0x4C }
+  - { offset: 0x6DE9, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer refreshLogs]', symObjAddr: 0x1400, symBinAddr: 0x5400, symSize: 0x320 }
+  - { offset: 0x6E60, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer copyLogs]', symObjAddr: 0x1720, symBinAddr: 0x5720, symSize: 0x104 }
+  - { offset: 0x6EA8, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer dismiss]', symObjAddr: 0x1824, symBinAddr: 0x5824, symSize: 0x38 }
+  - { offset: 0x6EDB, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer textView]', symObjAddr: 0x185C, symBinAddr: 0x585C, symSize: 0x24 }
+  - { offset: 0x6F12, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer setTextView:]', symObjAddr: 0x1880, symBinAddr: 0x5880, symSize: 0x3C }
+  - { offset: 0x6F51, size: 0x8, addend: 0x0, symName: '-[HWSLogViewer .cxx_destruct]', symObjAddr: 0x18BC, symBinAddr: 0x58BC, symSize: 0x38 }
+  - { offset: 0x6FB7, size: 0x8, addend: 0x0, symName: '___22+[HWSideloadUI shared]_block_invoke', symObjAddr: 0x1970, symBinAddr: 0x5970, symSize: 0x4C }
+  - { offset: 0x6FE1, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI attach:]', symObjAddr: 0x19BC, symBinAddr: 0x59BC, symSize: 0xF70 }
+  - { offset: 0x7062, size: 0x8, addend: 0x0, symName: __ZL10CGSizeMakedd, symObjAddr: 0x292C, symBinAddr: 0x692C, symSize: 0x2C }
+  - { offset: 0x70AE, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI drag:]', symObjAddr: 0x2958, symBinAddr: 0x6958, symSize: 0x3E4 }
+  - { offset: 0x70FF, size: 0x8, addend: 0x0, symName: __ZL11CGPointMakedd, symObjAddr: 0x2D3C, symBinAddr: 0x6D3C, symSize: 0x2C }
+  - { offset: 0x714B, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI menu]', symObjAddr: 0x2D68, symBinAddr: 0x6D68, symSize: 0x8EC }
+  - { offset: 0x71D2, size: 0x8, addend: 0x0, symName: '___20-[HWSideloadUI menu]_block_invoke', symObjAddr: 0x3654, symBinAddr: 0x7654, symSize: 0x78 }
+  - { offset: 0x7221, size: 0x8, addend: 0x0, symName: ___copy_helper_block_ea8_32s, symObjAddr: 0x36CC, symBinAddr: 0x76CC, symSize: 0x38 }
+  - { offset: 0x7245, size: 0x8, addend: 0x0, symName: ___destroy_helper_block_ea8_32s, symObjAddr: 0x3704, symBinAddr: 0x7704, symSize: 0x2C }
+  - { offset: 0x7261, size: 0x8, addend: 0x0, symName: '___20-[HWSideloadUI menu]_block_invoke.62', symObjAddr: 0x3730, symBinAddr: 0x7730, symSize: 0x3F4 }
+  - { offset: 0x72C6, size: 0x8, addend: 0x0, symName: '___20-[HWSideloadUI menu]_block_invoke_2', symObjAddr: 0x3B24, symBinAddr: 0x7B24, symSize: 0x260 }
+  - { offset: 0x7323, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI pickFile]', symObjAddr: 0x3D84, symBinAddr: 0x7D84, symSize: 0x254 }
+  - { offset: 0x7374, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI documentPicker:didPickDocumentsAtURLs:]', symObjAddr: 0x3FD8, symBinAddr: 0x7FD8, symSize: 0xBF4 }
+  - { offset: 0x746A, size: 0x8, addend: 0x0, symName: __ZL10fileSHA256P8NSString, symObjAddr: 0x4BCC, symBinAddr: 0x8BCC, symSize: 0x270 }
+  - { offset: 0x74D6, size: 0x8, addend: 0x0, symName: __ZL7fileMD5P8NSString, symObjAddr: 0x4E3C, symBinAddr: 0x8E3C, symSize: 0x270 }
+  - { offset: 0x7542, size: 0x8, addend: 0x0, symName: __ZL8fileSHA1P8NSString, symObjAddr: 0x50AC, symBinAddr: 0x90AC, symSize: 0x270 }
+  - { offset: 0x75CA, size: 0x8, addend: 0x0, symName: __ZL6HWSLogP8NSString, symObjAddr: 0x531C, symBinAddr: 0x931C, symSize: 0x148 }
+  - { offset: 0x7606, size: 0x8, addend: 0x0, symName: '___54-[HWSideloadUI documentPicker:didPickDocumentsAtURLs:]_block_invoke', symObjAddr: 0x5464, symBinAddr: 0x9464, symSize: 0xBC }
+  - { offset: 0x763F, size: 0x8, addend: 0x0, symName: '___54-[HWSideloadUI documentPicker:didPickDocumentsAtURLs:]_block_invoke_2', symObjAddr: 0x5520, symBinAddr: 0x9520, symSize: 0x344 }
+  - { offset: 0x76CC, size: 0x8, addend: 0x0, symName: ___copy_helper_block_ea8_32s40s, symObjAddr: 0x5864, symBinAddr: 0x9864, symSize: 0x58 }
+  - { offset: 0x76F0, size: 0x8, addend: 0x0, symName: ___destroy_helper_block_ea8_32s40s, symObjAddr: 0x58BC, symBinAddr: 0x98BC, symSize: 0x44 }
+  - { offset: 0x770C, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI alert:msg:]', symObjAddr: 0x5900, symBinAddr: 0x9900, symSize: 0x31C }
+  - { offset: 0x777B, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI btn]', symObjAddr: 0x5C1C, symBinAddr: 0x9C1C, symSize: 0x1C }
+  - { offset: 0x77B2, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI setBtn:]', symObjAddr: 0x5C38, symBinAddr: 0x9C38, symSize: 0x34 }
+  - { offset: 0x77F1, size: 0x8, addend: 0x0, symName: '-[HWSideloadUI .cxx_destruct]', symObjAddr: 0x5C6C, symBinAddr: 0x9C6C, symSize: 0x30 }
+  - { offset: 0x7824, size: 0x8, addend: 0x0, symName: __ZL24_logosLocalCtor_63d8c002iPPcS0_, symObjAddr: 0x5C9C, symBinAddr: 0x9C9C, symSize: 0x564 }
+  - { offset: 0x795C, size: 0x8, addend: 0x0, symName: '__ZL61_logos_method$_ungrouped$NSBundle$objectForInfoDictionaryKey$P8NSBundleP13objc_selectorP8NSString', symObjAddr: 0x64C0, symBinAddr: 0xA4C0, symSize: 0x270 }
+  - { offset: 0x79DC, size: 0x8, addend: 0x0, symName: '__ZL57_logos_method$_ungrouped$NSMutableURLRequest$initWithURL$P19NSMutableURLRequestP13objc_selectorP5NSURL', symObjAddr: 0x6730, symBinAddr: 0xA730, symSize: 0x2A8 }
+  - { offset: 0x7A40, size: 0x8, addend: 0x0, symName: '__ZL85_logos_method$_ungrouped$NSMutableURLRequest$initWithURL$cachePolicy$timeoutInterval$P19NSMutableURLRequestP13objc_selectorP5NSURL23NSURLRequestCachePolicyd', symObjAddr: 0x69D8, symBinAddr: 0xA9D8, symSize: 0x2E0 }
+  - { offset: 0x7AC2, size: 0x8, addend: 0x0, symName: '__ZL52_logos_method$_ungrouped$NSMutableURLRequest$setURL$P19NSMutableURLRequestP13objc_selectorP5NSURL', symObjAddr: 0x6CB8, symBinAddr: 0xACB8, symSize: 0x2F8 }
+  - { offset: 0x7B28, size: 0x8, addend: 0x0, symName: '__ZL73_logos_method$_ungrouped$NSMutableURLRequest$setValue$forHTTPHeaderField$P19NSMutableURLRequestP13objc_selectorP8NSStringS4_', symObjAddr: 0x6FB0, symBinAddr: 0xAFB0, symSize: 0x1B4 }
+  - { offset: 0x7B8E, size: 0x8, addend: 0x0, symName: '__ZL73_logos_method$_ungrouped$NSMutableURLRequest$addValue$forHTTPHeaderField$P19NSMutableURLRequestP13objc_selectorP8NSStringS4_', symObjAddr: 0x7164, symBinAddr: 0xB164, symSize: 0x1B4 }
+  - { offset: 0x7BF4, size: 0x8, addend: 0x0, symName: '__ZL68_logos_method$_ungrouped$NSMutableURLRequest$setAllHTTPHeaderFields$P19NSMutableURLRequestP13objc_selectorP12NSDictionary', symObjAddr: 0x7318, symBinAddr: 0xB318, symSize: 0x45C }
+  - { offset: 0x7CA1, size: 0x8, addend: 0x0, symName: '__ZL57_logos_method$_ungrouped$NSMutableURLRequest$setHTTPBody$P19NSMutableURLRequestP13objc_selectorP6NSData', symObjAddr: 0x7774, symBinAddr: 0xB774, symSize: 0x288 }
+  - { offset: 0x7D13, size: 0x8, addend: 0x0, symName: '__ZL67_logos_method$_ungrouped$NSFileManager$copyItemAtPath$toPath$error$P13NSFileManagerP13objc_selectorP8NSStringS4_PU15__autoreleasingP7NSError', symObjAddr: 0x79FC, symBinAddr: 0xB9FC, symSize: 0x220 }
+  - { offset: 0x7D7D, size: 0x8, addend: 0x0, symName: '__ZL65_logos_method$_ungrouped$NSFileManager$copyItemAtURL$toURL$error$P13NSFileManagerP13objc_selectorP5NSURLS4_PU15__autoreleasingP7NSError', symObjAddr: 0x7C1C, symBinAddr: 0xBC1C, symSize: 0x220 }
+  - { offset: 0x7DE7, size: 0x8, addend: 0x0, symName: '__ZL67_logos_method$_ungrouped$NSFileManager$moveItemAtPath$toPath$error$P13NSFileManagerP13objc_selectorP8NSStringS4_PU15__autoreleasingP7NSError', symObjAddr: 0x7E3C, symBinAddr: 0xBE3C, symSize: 0x220 }
+  - { offset: 0x7E51, size: 0x8, addend: 0x0, symName: '__ZL68_logos_method$_ungrouped$NSFileManager$attributesOfItemAtPath$error$P13NSFileManagerP13objc_selectorP8NSStringPU15__autoreleasingP7NSError', symObjAddr: 0x8420, symBinAddr: 0xC420, symSize: 0x444 }
+  - { offset: 0x7EE7, size: 0x8, addend: 0x0, symName: '__ZL83_logos_meta_method$_ungrouped$NSJSONSerialization$JSONObjectWithData$options$error$P10objc_classP13objc_selectorP6NSDatamPU15__autoreleasingP7NSError', symObjAddr: 0x8864, symBinAddr: 0xC864, symSize: 0x49C }
+  - { offset: 0x7F9C, size: 0x8, addend: 0x0, symName: '__ZL55_logos_method$_ungrouped$NSData$writeToFile$atomically$P6NSDataP13objc_selectorP8NSStringb', symObjAddr: 0x8D00, symBinAddr: 0xCD00, symSize: 0x2C0 }
+  - { offset: 0x800C, size: 0x8, addend: 0x0, symName: '__ZL54_logos_method$_ungrouped$NSData$writeToURL$atomically$P6NSDataP13objc_selectorP5NSURLb', symObjAddr: 0x8FC0, symBinAddr: 0xCFC0, symSize: 0x18C }
+  - { offset: 0x8067, size: 0x8, addend: 0x0, symName: '__ZL60_logos_meta_method$_ungrouped$NSData$dataWithContentsOfFile$P10objc_classP13objc_selectorP8NSString', symObjAddr: 0x914C, symBinAddr: 0xD14C, symSize: 0x514 }
+  - { offset: 0x812F, size: 0x8, addend: 0x0, symName: '__ZL59_logos_meta_method$_ungrouped$NSData$dataWithContentsOfURL$P10objc_classP13objc_selectorP5NSURL', symObjAddr: 0x9660, symBinAddr: 0xD660, symSize: 0x428 }
+  - { offset: 0x817B, size: 0x8, addend: 0x0, symName: '__ZL69_logos_method$_ungrouped$NSData$initWithContentsOfFile$options$error$P6NSDataP13objc_selectorP8NSStringmPU15__autoreleasingP7NSError', symObjAddr: 0x9A88, symBinAddr: 0xDA88, symSize: 0x1CC }
+  - { offset: 0x81E5, size: 0x8, addend: 0x0, symName: '__ZL68_logos_method$_ungrouped$NSData$initWithContentsOfURL$options$error$P6NSDataP13objc_selectorP5NSURLmPU15__autoreleasingP7NSError', symObjAddr: 0x9C54, symBinAddr: 0xDC54, symSize: 0x47C }
+  - { offset: 0x824F, size: 0x8, addend: 0x0, symName: '__ZL70_logos_meta_method$_ungrouped$NSFileHandle$fileHandleForReadingAtPath$P10objc_classP13objc_selectorP8NSString', symObjAddr: 0xA0D0, symBinAddr: 0xE0D0, symSize: 0x1BC }
+  - { offset: 0x829B, size: 0x8, addend: 0x0, symName: '__ZL70_logos_meta_method$_ungrouped$NSInputStream$inputStreamWithFileAtPath$P10objc_classP13objc_selectorP8NSString', symObjAddr: 0xA28C, symBinAddr: 0xE28C, symSize: 0x248 }
+  - { offset: 0x82E7, size: 0x8, addend: 0x0, symName: '__ZL58_logos_method$_ungrouped$NSInputStream$initWithFileAtPath$P13NSInputStreamP13objc_selectorP8NSString', symObjAddr: 0xA4D4, symBinAddr: 0xE4D4, symSize: 0x280 }
+  - { offset: 0x8333, size: 0x8, addend: 0x0, symName: '__ZL76_logos_method$_ungrouped$NSURLSession$dataTaskWithRequest$completionHandler$P12NSURLSessionP13objc_selectorP12NSURLRequestU13block_pointerFvP6NSDataP13NSURLResponseP7NSErrorE', symObjAddr: 0xA754, symBinAddr: 0xE754, symSize: 0x1E8 }
+  - { offset: 0x839D, size: 0x8, addend: 0x0, symName: '__ZL51_logos_method$_ungrouped$UIWindow$makeKeyAndVisibleP8UIWindowP13objc_selector', symObjAddr: 0xA93C, symBinAddr: 0xE93C, symSize: 0x34 }
+  - { offset: 0x83D6, size: 0x8, addend: 0x0, symName: ____ZL24_logosLocalCtor_63d8c002iPPcS0__block_invoke, symObjAddr: 0xA970, symBinAddr: 0xE970, symSize: 0x5D0 }
+  - { offset: 0x84F5, size: 0x8, addend: 0x0, symName: __ZL23my_SecCodeCheckValidityPvjS_, symObjAddr: 0xAF40, symBinAddr: 0xEF40, symSize: 0x1C }
+  - { offset: 0x853D, size: 0x8, addend: 0x0, symName: __ZL19my_SecTrustEvaluateP10__SecTrustP18SecTrustResultType, symObjAddr: 0xAF5C, symBinAddr: 0xEF5C, symSize: 0x4C }
+  - { offset: 0x8577, size: 0x8, addend: 0x0, symName: __ZL28my_SecTrustEvaluateWithErrorP10__SecTrustPP9__CFError, symObjAddr: 0xAFA8, symBinAddr: 0xEFA8, symSize: 0x4C }
+  - { offset: 0x85B1, size: 0x8, addend: 0x0, symName: __ZL9my_ptraceiiPci, symObjAddr: 0xAFF4, symBinAddr: 0xEFF4, symSize: 0x9C }
+  - { offset: 0x8607, size: 0x8, addend: 0x0, symName: __ZL9my_sysctlPijPvPmS0_m, symObjAddr: 0xB090, symBinAddr: 0xF090, symSize: 0x124 }
+  - { offset: 0x86A3, size: 0x8, addend: 0x0, symName: __ZL20my__dyld_image_countv, symObjAddr: 0xB1B4, symBinAddr: 0xF1B4, symSize: 0x54 }
+  - { offset: 0x86CF, size: 0x8, addend: 0x0, symName: __ZL23my__dyld_get_image_namej, symObjAddr: 0xB208, symBinAddr: 0xF208, symSize: 0xB4 }
+  - { offset: 0x8709, size: 0x8, addend: 0x0, symName: __ZL9my_accessPKci, symObjAddr: 0xB2BC, symBinAddr: 0xF2BC, symSize: 0xE0 }
+  - { offset: 0x8743, size: 0x8, addend: 0x0, symName: __ZL7my_statPKcP4stat, symObjAddr: 0xB39C, symBinAddr: 0xF39C, symSize: 0xE0 }
+  - { offset: 0x877D, size: 0x8, addend: 0x0, symName: __ZL18appDidBecomeActiveP22__CFNotificationCenterPvPK10__CFStringPKvPK14__CFDictionary, symObjAddr: 0xB47C, symBinAddr: 0xF47C, symSize: 0x150 }
+  - { offset: 0x87F2, size: 0x8, addend: 0x0, symName: __ZL17dumpTargetClassesv, symObjAddr: 0xB5CC, symBinAddr: 0xF5CC, symSize: 0x670 }
+  - { offset: 0x890D, size: 0x8, addend: 0x0, symName: '__ZL98_logos_meta_method$SideloadHooks$SHDWiFiCommandSend$sendNotifiDeviceStartTransferFileWithFileInfo$P10objc_classP13objc_selectorP11objc_object', symObjAddr: 0xC284, symBinAddr: 0x10284, symSize: 0xB0 }
+  - { offset: 0x8955, size: 0x8, addend: 0x0, symName: '__ZL97_logos_meta_method$SideloadHooks$SHDWiFiCommandSend$sendNotifiDeviceTransferFileInfoWithFileInfo$P10objc_classP13objc_selectorP11objc_object', symObjAddr: 0xC334, symBinAddr: 0x10334, symSize: 0xB0 }
+  - { offset: 0x899D, size: 0x8, addend: 0x0, symName: '__ZL73_logos_meta_method$SideloadHooks$SHDWiFiCommandSend$sendTransferFileInfo$P10objc_classP13objc_selectorP11objc_object', symObjAddr: 0xC3E4, symBinAddr: 0x103E4, symSize: 0xB0 }
+  - { offset: 0x89E5, size: 0x8, addend: 0x0, symName: '__ZL77_logos_method$SideloadHooks$SHDWiFiTransferManager$transferFileInfo$callback$P11objc_objectP13objc_selectorS0_S0_', symObjAddr: 0xC494, symBinAddr: 0x10494, symSize: 0xE8 }
+  - { offset: 0x8A3C, size: 0x8, addend: 0x0, symName: '__ZL68_logos_method$SideloadHooks$SHWatchAppStoreManager$pushFileProgress$P11objc_objectP13objc_selectorP14NSNotification', symObjAddr: 0xC57C, symBinAddr: 0x1057C, symSize: 0x80 }
+  - { offset: 0x8A84, size: 0x8, addend: 0x0, symName: '__ZL81_logos_method$SideloadHooks$WSSCommonFileMgr$sendFileTransferNegotiate$errorCode$P16WSSCommonFileMgrP13objc_selectorP11objc_objectl', symObjAddr: 0xC5FC, symBinAddr: 0x105FC, symSize: 0x138 }
+  - { offset: 0x8ADB, size: 0x8, addend: 0x0, symName: '__ZL63_logos_method$SideloadHooks$WSSCommonFileMgr$pausedTransferFileP16WSSCommonFileMgrP13objc_selector', symObjAddr: 0xCC40, symBinAddr: 0x10C40, symSize: 0x40 }
+  - { offset: 0x8B14, size: 0x8, addend: 0x0, symName: '__ZL81_logos_method$SideloadHooks$WSSCommonFileMgr$sendFileCheckMode$fileid$offsetSize$P16WSSCommonFileMgrP13objc_selectorllx', symObjAddr: 0xCE18, symBinAddr: 0x10E18, symSize: 0xD0 }
+  - { offset: 0x8B7A, size: 0x8, addend: 0x0, symName: '__ZL105_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileTransferNegotiate$deviceInfo$errorCode$P10objc_classP13objc_selectorP11objc_objectS4_l', symObjAddr: 0xD828, symBinAddr: 0x11828, symSize: 0x144 }
+  - { offset: 0x8BE0, size: 0x8, addend: 0x0, symName: '__ZL54_logos_method$SideloadHooks$WSSCommonFileInfo$filePathP17WSSCommonFileInfoP13objc_selector', symObjAddr: 0xD96C, symBinAddr: 0x1196C, symSize: 0x160 }
+  - { offset: 0x8C2C, size: 0x8, addend: 0x0, symName: '__ZL54_logos_method$SideloadHooks$WSSCommonFileInfo$fileSizeP17WSSCommonFileInfoP13objc_selector', symObjAddr: 0xDACC, symBinAddr: 0x11ACC, symSize: 0x210 }
+  - { offset: 0x8CA2, size: 0x8, addend: 0x0, symName: '__ZL58_logos_method$SideloadHooks$WSSCommonFileInfo$sha256ResultP17WSSCommonFileInfoP13objc_selector', symObjAddr: 0xDCDC, symBinAddr: 0x11CDC, symSize: 0x15C }
+  - { offset: 0x8D03, size: 0x8, addend: 0x0, symName: '__ZL58_logos_method$SideloadHooks$WSSCommonFileInfo$isNeedVerifyP17WSSCommonFileInfoP13objc_selector', symObjAddr: 0xDE38, symBinAddr: 0x11E38, symSize: 0x118 }
+  - { offset: 0x8D55, size: 0x8, addend: 0x0, symName: ____ZL6HWSLogP8NSString_block_invoke, symObjAddr: 0xDF50, symBinAddr: 0x11F50, symSize: 0x228 }
+  - { offset: 0x8DB8, size: 0x8, addend: 0x0, symName: '____ZL50_logos_method$_ungrouped$NSBundle$bundleIdentifierP8NSBundleP13objc_selector_block_invoke', symObjAddr: 0xE178, symBinAddr: 0x12178, symSize: 0x9C }
+  - { offset: 0x8DF1, size: 0x8, addend: 0x0, symName: __ZL14sanitizeStringP8NSString, symObjAddr: 0xE214, symBinAddr: 0x12214, symSize: 0x16C }
+  - { offset: 0x8E1D, size: 0x8, addend: 0x0, symName: __ZL11isTargetExtP8NSString, symObjAddr: 0xE380, symBinAddr: 0x12380, symSize: 0x17C }
+  - { offset: 0x8E5A, size: 0x8, addend: 0x0, symName: '____ZL65_logos_method$_ungrouped$NSFileManager$moveItemAtURL$toURL$error$P13NSFileManagerP13objc_selectorP5NSURLS4_PU15__autoreleasingP7NSError_block_invoke', symObjAddr: 0xE4FC, symBinAddr: 0x124FC, symSize: 0x64 }
+  - { offset: 0x8E84, size: 0x8, addend: 0x0, symName: '____ZL65_logos_method$_ungrouped$NSFileManager$moveItemAtURL$toURL$error$P13NSFileManagerP13objc_selectorP5NSURLS4_PU15__autoreleasingP7NSError_block_invoke_2', symObjAddr: 0xE560, symBinAddr: 0x12560, symSize: 0x834 }
+  - { offset: 0x8FD5, size: 0x8, addend: 0x0, symName: __ZL22containsInstallCommandP11objc_object, symObjAddr: 0xED94, symBinAddr: 0x12D94, symSize: 0x4E8 }
+  - { offset: 0x9038, size: 0x8, addend: 0x0, symName: __ZL17replaceTargetJsonP11objc_objectx, symObjAddr: 0xF27C, symBinAddr: 0x1327C, symSize: 0x11F8 }
+  - { offset: 0x9113, size: 0x8, addend: 0x0, symName: __ZL20isInstallCommandDictP11objc_object, symObjAddr: 0x10474, symBinAddr: 0x14474, symSize: 0x44C }
+  - { offset: 0x919E, size: 0x8, addend: 0x0, symName: '____ZL76_logos_method$_ungrouped$NSURLSession$dataTaskWithRequest$completionHandler$P12NSURLSessionP13objc_selectorP12NSURLRequestU13block_pointerFvP6NSDataP13NSURLResponseP7NSErrorE_block_invoke', symObjAddr: 0x108C0, symBinAddr: 0x148C0, symSize: 0x680 }
+  - { offset: 0x9268, size: 0x8, addend: 0x0, symName: ___copy_helper_block_ea8_32b, symObjAddr: 0x10F40, symBinAddr: 0x14F40, symSize: 0x38 }
+  - { offset: 0x928C, size: 0x8, addend: 0x0, symName: __Z6strstrB8ne190102Ua9enable_ifIXLb1EEEPKcS0_, symObjAddr: 0x10F78, symBinAddr: 0x14F78, symSize: 0x2C }
+  - { offset: 0x92C6, size: 0x8, addend: 0x0, symName: '____ZL86_logos_method$SideloadHooks$NSNotificationCenter$postNotificationName$object$userInfo$P20NSNotificationCenterP13objc_selectorP8NSStringP11objc_objectP12NSDictionary_block_invoke', symObjAddr: 0x10FA4, symBinAddr: 0x14FA4, symSize: 0x38 }
+  - { offset: 0x9302, size: 0x8, addend: 0x0, symName: __ZL20dumpObjectPropertiesP11objc_objectP8NSString, symObjAddr: 0x10FDC, symBinAddr: 0x14FDC, symSize: 0x430 }
+  - { offset: 0x93CB, size: 0x8, addend: 0x0, symName: __ZL28replacePathAndSizeInFileInfoP11objc_object, symObjAddr: 0x1140C, symBinAddr: 0x1540C, symSize: 0x9C4 }
+  - { offset: 0x94D3, size: 0x8, addend: 0x0, symName: '____ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl_block_invoke', symObjAddr: 0x11DD0, symBinAddr: 0x15DD0, symSize: 0x4C }
+  - { offset: 0x94FD, size: 0x8, addend: 0x0, symName: '____ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl_block_invoke_2', symObjAddr: 0x11E1C, symBinAddr: 0x15E1C, symSize: 0x180 }
+  - { offset: 0x9591, size: 0x8, addend: 0x0, symName: '____ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl_block_invoke_3', symObjAddr: 0x11F9C, symBinAddr: 0x15F9C, symSize: 0x150 }
+  - { offset: 0x95EA, size: 0x8, addend: 0x0, symName: ___copy_helper_block_ea8_32w, symObjAddr: 0x120EC, symBinAddr: 0x160EC, symSize: 0x34 }
+  - { offset: 0x960E, size: 0x8, addend: 0x0, symName: ___destroy_helper_block_ea8_32w, symObjAddr: 0x12120, symBinAddr: 0x16120, symSize: 0x28 }
+  - { offset: 0x962A, size: 0x8, addend: 0x0, symName: '____ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl_block_invoke.635', symObjAddr: 0x12148, symBinAddr: 0x16148, symSize: 0x150 }
+  - { offset: 0x9683, size: 0x8, addend: 0x0, symName: '____ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl_block_invoke_2.638', symObjAddr: 0x12298, symBinAddr: 0x16298, symSize: 0x150 }
+  - { offset: 0x96DC, size: 0x8, addend: 0x0, symName: '____ZL68_logos_method$SideloadHooks$WSSCommonFileMgr$finishPushFileWithType$P16WSSCommonFileMgrP13objc_selectorl_block_invoke_3.641', symObjAddr: 0x123E8, symBinAddr: 0x163E8, symSize: 0x150 }
+  - { offset: 0x9735, size: 0x8, addend: 0x0, symName: '____ZL114_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileCheckMode$deviceInfo$fileInfo$fileid$offsetSize$P10objc_classP13objc_selectorlP11objc_objectS4_lx_block_invoke', symObjAddr: 0x12538, symBinAddr: 0x16538, symSize: 0x78 }
+  - { offset: 0x9783, size: 0x8, addend: 0x0, symName: '____ZL141_logos_meta_method$SideloadHooks$WSSCommonFileMgrSendUtil$sendFileContentToDeviceWithDataInfo$fileData$deviceInfo$selectIndexArray$negotiate$P10objc_classP13objc_selectorP11objc_objectP6NSDataS4_S4_S4__block_invoke', symObjAddr: 0x125B0, symBinAddr: 0x165B0, symSize: 0x974 }
+  - { offset: 0x98FF, size: 0x8, addend: 0x0, symName: ___copy_helper_block_ea8_32s40s48s56s64s, symObjAddr: 0x12F24, symBinAddr: 0x16F24, symSize: 0xA0 }
+  - { offset: 0x9923, size: 0x8, addend: 0x0, symName: ___destroy_helper_block_ea8_32s40s48s56s64s, symObjAddr: 0x12FC4, symBinAddr: 0x16FC4, symSize: 0x74 }
+  - { offset: 0xABDD, size: 0x8, addend: 0x0, symName: _rebind_symbols_image, symObjAddr: 0x0, symBinAddr: 0x17038, symSize: 0x78 }
+  - { offset: 0xABF6, size: 0x8, addend: 0x0, symName: __rebindingsHead, symObjAddr: 0x2CC8, symBinAddr: 0x24E80, symSize: 0x0 }
+  - { offset: 0xB128, size: 0x8, addend: 0x0, symName: _rebind_symbols_image, symObjAddr: 0x0, symBinAddr: 0x17038, symSize: 0x78 }
+  - { offset: 0xB19D, size: 0x8, addend: 0x0, symName: _prepend_rebindings, symObjAddr: 0x78, symBinAddr: 0x170B0, symSize: 0xD8 }
+  - { offset: 0xB1EF, size: 0x8, addend: 0x0, symName: _rebind_symbols_for_image, symObjAddr: 0x150, symBinAddr: 0x17188, symSize: 0xE4 }
+  - { offset: 0xB29F, size: 0x8, addend: 0x0, symName: _rebind_symbols, symObjAddr: 0x234, symBinAddr: 0x1726C, symSize: 0xE0 }
+  - { offset: 0xB321, size: 0x8, addend: 0x0, symName: __rebind_symbols_for_image, symObjAddr: 0x314, symBinAddr: 0x1734C, symSize: 0x34 }
+  - { offset: 0xB356, size: 0x8, addend: 0x0, symName: _find_linkedit_and_symtabs, symObjAddr: 0x348, symBinAddr: 0x17380, symSize: 0x108 }
+  - { offset: 0xB3EE, size: 0x8, addend: 0x0, symName: _rebind_data_sections, symObjAddr: 0x450, symBinAddr: 0x17488, symSize: 0x124 }
+  - { offset: 0xB4C8, size: 0x8, addend: 0x0, symName: _parse_segment_command, symObjAddr: 0x574, symBinAddr: 0x175AC, symSize: 0xBC }
+  - { offset: 0xB516, size: 0x8, addend: 0x0, symName: _rebind_sections_in_segment, symObjAddr: 0x630, symBinAddr: 0x17668, symSize: 0xD0 }
+  - { offset: 0xB5D4, size: 0x8, addend: 0x0, symName: _perform_rebinding_with_section, symObjAddr: 0x700, symBinAddr: 0x17738, symSize: 0x128 }
+  - { offset: 0xB6AE, size: 0x8, addend: 0x0, symName: _try_rebind_symbol, symObjAddr: 0x828, symBinAddr: 0x17860, symSize: 0xDC }
+  - { offset: 0xB70E, size: 0x8, addend: 0x0, symName: _check_and_apply_rebinding, symObjAddr: 0x904, symBinAddr: 0x1793C, symSize: 0x190 }
+...
