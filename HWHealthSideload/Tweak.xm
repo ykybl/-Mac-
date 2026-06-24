@@ -29,7 +29,10 @@ static NSInteger g_utilChunkCount = 0;        // WSSCommonFileMgrSendUtil 数据
 
 static NSMutableArray *g_logs = nil;
 static void HWSLog(NSString *msg) {
-    if (!g_logs) g_logs = [NSMutableArray new];
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        g_logs = [NSMutableArray new];
+    });
     dispatch_async(dispatch_get_main_queue(), ^{
         NSDateFormatter *df = [NSDateFormatter new];
         [df setDateFormat:@"HH:mm:ss.SSS"];
@@ -90,7 +93,7 @@ static OSStatus my_SecCodeCheckValidity(void *code, uint32_t flags, void *req) {
 typedef OSStatus (*SecTrustEvaluate_func)(SecTrustRef trust, SecTrustResultType *result);
 static SecTrustEvaluate_func orig_SecTrustEvaluate;
 static OSStatus my_SecTrustEvaluate(SecTrustRef trust, SecTrustResultType *result) {
-    HWSLog(@"🔐 [CertBypass] SecTrustEvaluate 被拦截！强制返回信任！");
+    // HWSLog(@"🔐 [CertBypass] SecTrustEvaluate 被拦截！强制返回信任！");
     if (result) *result = kSecTrustResultProceed;
     return noErr;
 }
@@ -99,7 +102,7 @@ static OSStatus my_SecTrustEvaluate(SecTrustRef trust, SecTrustResultType *resul
 typedef bool (*SecTrustEvaluateWithError_func)(SecTrustRef trust, CFErrorRef *error);
 static SecTrustEvaluateWithError_func orig_SecTrustEvaluateWithError;
 static bool my_SecTrustEvaluateWithError(SecTrustRef trust, CFErrorRef *error) {
-    HWSLog(@"🔐 [CertBypass] SecTrustEvaluateWithError 被拦截！强制返回 YES！");
+    // HWSLog(@"🔐 [CertBypass] SecTrustEvaluateWithError 被拦截！强制返回 YES！");
     if (error) *error = NULL;
     return YES;
 }
@@ -1472,7 +1475,6 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
         Class cmdCls = NSClassFromString(@"HuaweiWear.SHDWiFiCommandSend");
         if (wifiCls || storeCls || cmdCls) {
             NSLog(@"[HWSideload] ✅ 成功全局获取动态类句柄!");
-            HWSLog(dumpTargetClasses());
             %init(SideloadHooks, SHDWiFiTransferManager=wifiCls, SHWatchAppStoreManager=storeCls, SHDWiFiCommandSend=cmdCls);
         } else {
             NSLog(@"[HWSideload] ❌ 获取动态类句柄失败!");
