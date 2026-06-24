@@ -104,65 +104,6 @@ static bool my_SecTrustEvaluateWithError(SecTrustRef trust, CFErrorRef *error) {
     return YES;
 }
 
-// 屏蔽 ptrace 反调试
-static int (*orig_ptrace)(int request, pid_t pid, caddr_t addr, int data);
-static int my_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    if (request == 31) { // PT_DENY_ATTACH
-        HWSLog(@"🛡️ [AntiDebug] 拦截 PT_DENY_ATTACH，反调试已绕过");
-        return 0;
-    }
-    return orig_ptrace ? orig_ptrace(request, pid, addr, data) : 0;
-}
-
-// 屏蔽 sysctl 反调试 (清除 P_TRACED 标志)
-#include <sys/sysctl.h>
-static int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
-static int my_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    int ret = orig_sysctl ? orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen) : -1;
-    if (ret == 0 && namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID && oldp && oldlenp) {
-        // 清除 P_TRACED 标志
-        // Note: kp_proc.p_flag 偏移可能因系统版本而异，但屏蔽它是通用策略
-        int *p_flag = (int *)((char *)oldp + 0x08); // kp_proc.p_flag approximate offset
-        if (p_flag) *p_flag &= ~0x00000800; // ~P_TRACED
-    }
-    return ret;
-}
-
-// 隐藏动态库
-static uint32_t (*orig__dyld_image_count)(void);
-static uint32_t my__dyld_image_count(void) {
-    uint32_t count = orig__dyld_image_count ? orig__dyld_image_count() : 0;
-    return count;
-}
-
-static const char* (*orig__dyld_get_image_name)(uint32_t image_index);
-static const char* my__dyld_get_image_name(uint32_t image_index) {
-    const char *name = orig__dyld_get_image_name ? orig__dyld_get_image_name(image_index) : NULL;
-    if (name && (strstr(name, "HWHealthSideload.dylib") != NULL || strstr(name, "FridaGadget") != NULL)) {
-        return "/usr/lib/libSystem.B.dylib";
-    }
-    return name;
-}
-
-// 隐藏文件系统痕迹
-#include <sys/stat.h>
-#include <unistd.h>
-static int (*orig_access)(const char *path, int mode);
-static int my_access(const char *path, int mode) {
-    if (path && (strstr(path, "nb全能助手") || strstr(path, "Tweak") || strstr(path, "Signer") || strstr(path, "Troll"))) {
-        return -1;
-    }
-    return orig_access ? orig_access(path, mode) : -1;
-}
-
-static int (*orig_stat)(const char *path, struct stat *buf);
-static int my_stat(const char *path, struct stat *buf) {
-    if (path && (strstr(path, "nb全能助手") || strstr(path, "Tweak") || strstr(path, "Signer") || strstr(path, "Troll"))) {
-        return -1;
-    }
-    return orig_stat ? orig_stat(path, buf) : -1;
-}
-
 // ============================================================================
 // Part 1.5: NSBundle 伪装 (精准身份欺骗)
 // ============================================================================
@@ -171,14 +112,13 @@ static int my_stat(const char *path, struct stat *buf) {
     NSString *orig = %orig;
     
     // 获取调用者的地址信息
+    void *addr = __builtin_return_address(0);
     Dl_info info;
-    if (dladdr(__builtin_return_address(0), &info) != 0) {
-        NSString *callerPath = [NSString stringWithUTF8String:info.dli_fname];
-        
-        // 仅当调用者是主程序或者华为 SDK 相关库时才进行伪装
-        if ([callerPath containsString:@"HuaweiWear"] || 
-            [callerPath containsString:@"SHSports"] || 
-            [callerPath containsString:@"iossporthealth"]) {
+    if (dladdr(addr, &info) != 0 && info.dli_fname != NULL) {
+        // 仅当调用者是主程序或者华为 SDK 相关库时才进行伪装 (使用 C 字符串查找极大地提升性能，避免看门狗超时)
+        if (strstr(info.dli_fname, "HuaweiWear") || 
+            strstr(info.dli_fname, "SHSports") || 
+            strstr(info.dli_fname, "iossporthealth")) {
             
             // 只要不是官方 bundle ID，就替换为官方的
             if (![orig isEqualToString:@"com.huawei.iossporthealth"]) {
@@ -196,12 +136,12 @@ static int my_stat(const char *path, struct stat *buf) {
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     id orig = %orig;
     if ([key isEqualToString:@"CFBundleIdentifier"]) {
+        void *addr = __builtin_return_address(0);
         Dl_info info;
-        if (dladdr(__builtin_return_address(0), &info) != 0) {
-            NSString *callerPath = [NSString stringWithUTF8String:info.dli_fname];
-            if ([callerPath containsString:@"HuaweiWear"] || 
-                [callerPath containsString:@"SHSports"] || 
-                [callerPath containsString:@"iossporthealth"]) {
+        if (dladdr(addr, &info) != 0 && info.dli_fname != NULL) {
+            if (strstr(info.dli_fname, "HuaweiWear") || 
+                strstr(info.dli_fname, "SHSports") || 
+                strstr(info.dli_fname, "iossporthealth")) {
                 if (![orig isEqualToString:@"com.huawei.iossporthealth"]) {
                     return @"com.huawei.iossporthealth";
                 }
@@ -1501,19 +1441,13 @@ static void appDidBecomeActive(CFNotificationCenterRef center, void *observer, C
     NSLog(@"[HWSideload] 真实 Bundle ID: %@", g_realBundleId);
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        // 【关键】绑定证书、反调试、隐藏痕迹函数
-        struct Rebinding rb[] = {
+        // 【关键】绑定证书绕过
+        struct rebinding rb[] = {
             {"SecCodeCheckValidity", (void *)my_SecCodeCheckValidity, (void **)&orig_SecCodeCheckValidity},
             {"SecTrustEvaluate", (void *)my_SecTrustEvaluate, (void **)&orig_SecTrustEvaluate},
-            {"SecTrustEvaluateWithError", (void *)my_SecTrustEvaluateWithError, (void **)&orig_SecTrustEvaluateWithError},
-            {"ptrace", (void *)my_ptrace, (void **)&orig_ptrace},
-            {"sysctl", (void *)my_sysctl, (void **)&orig_sysctl},
-            {"_dyld_image_count", (void *)my__dyld_image_count, (void **)&orig__dyld_image_count},
-            {"_dyld_get_image_name", (void *)my__dyld_get_image_name, (void **)&orig__dyld_get_image_name},
-            {"access", (void *)my_access, (void **)&orig_access},
-            {"stat", (void *)my_stat, (void **)&orig_stat}
+            {"SecTrustEvaluateWithError", (void *)my_SecTrustEvaluateWithError, (void **)&orig_SecTrustEvaluateWithError}
         };
-        int hookResult = rebind_symbols(rb, sizeof(rb)/sizeof(struct Rebinding));
+        int hookResult = rebind_symbols(rb, sizeof(rb)/sizeof(struct rebinding));
         HWSLog([NSString stringWithFormat:@"🛡️ [Fishhook] 绑定环境检测绕过结果: %d (0=成功)", hookResult]);
         
         CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
