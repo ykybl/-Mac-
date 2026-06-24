@@ -16,10 +16,10 @@ jobs:
           export THEOS=~/theos
           cd HWHealthSideload
           make > compile.log 2>&1 || true
-          cp .theos/obj/debug/*.dylib ../HWHealthSideload_v5.1.dylib || true
+          find . -name "*.dylib" -exec cp {} ../HWHealthSideload_v5.1.dylib \; || true
           cd ..
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add HWHealthSideload_v5.1.dylib compile.log
+          git add --all
           git commit -m "Auto compile and upload dylib" || true
           git push || true
