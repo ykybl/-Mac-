@@ -1262,15 +1262,10 @@ static NSString *dumpTargetClasses() {
     
     // 从旧的父视图移除
     [self.btn removeFromSuperview];
-
-    UIViewController *vc = w.rootViewController;
-    if (vc && vc.view) {
-        [vc.view addSubview:self.btn];
-        [vc.view bringSubviewToFront:self.btn];
-    } else {
-        [w addSubview:self.btn];
-        [w bringSubviewToFront:self.btn];
-    }
+    
+    // 直接添加到 Window，避免干扰 ViewController 导致各种 presented 异常
+    [w addSubview:self.btn];
+    [w bringSubviewToFront:self.btn];
 }
 
 - (void)drag:(UIPanGestureRecognizer *)r {
@@ -1340,8 +1335,9 @@ static NSString *dumpTargetClasses() {
 }
 
 - (void)pickFile {
+    // 改用 public.item 允许选择任何后缀的文件，防止 .hap/.bin 被系统变灰无法选中
     UIDocumentPickerViewController *p = [[UIDocumentPickerViewController alloc]
-        initWithDocumentTypes:@[@"public.data"] inMode:UIDocumentPickerModeImport];
+        initWithDocumentTypes:@[@"public.item"] inMode:UIDocumentPickerModeImport];
     p.delegate = self;
     p.allowsMultipleSelection = NO;
     // 不用 FullScreen，用默认样式，避免破坏 TabBar
