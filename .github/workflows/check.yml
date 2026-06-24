@@ -16,7 +16,7 @@ jobs:
           export THEOS=~/theos
           cd HWHealthSideload
           make > compile.log 2>&1 || true
-          find . -name "*.dylib" -exec cp {} ../HWHealthSideload_v5.1.dylib \; || true
+          find . -name "*.dylib" -exec cp {} ../HWHealthSideload.dylib \; || true
           cd ..
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
