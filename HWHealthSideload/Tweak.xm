@@ -1335,81 +1335,108 @@ static NSString *dumpTargetClasses() {
 }
 
 - (void)pickFile {
-    // 改用 public.item 允许选择任何后缀的文件，防止 .hap/.bin 被系统变灰无法选中
-    UIDocumentPickerViewController *p = [[UIDocumentPickerViewController alloc]
-        initWithDocumentTypes:@[@"public.item"] inMode:UIDocumentPickerModeImport];
-    p.delegate = self;
-    p.allowsMultipleSelection = NO;
-    // 不用 FullScreen，用默认样式，避免破坏 TabBar
-    p.modalPresentationStyle = UIModalPresentationAutomatic;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *docDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *inboxDir = [docDir stringByAppendingPathComponent:@"Inbox"];
+    NSString *cacheDir = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    
+    NSMutableArray *hapFiles = [NSMutableArray array];
+    NSArray *dirs = @[docDir, inboxDir, cacheDir];
+    
+    for (NSString *dir in dirs) {
+        NSArray *files = [fm contentsOfDirectoryAtPath:dir error:nil];
+        for (NSString *file in files) {
+            if ([file hasSuffix:@".hap"] || [file hasSuffix:@".bin"] || [file hasSuffix:@".pkg"]) {
+                [hapFiles addObject:[dir stringByAppendingPathComponent:file]];
+            }
+        }
+    }
+    
+    if (hapFiles.count == 0) {
+        [self alert:@"未找到本地文件" msg:@"由于侧载证书权限限制，无法打开系统文件管理器。\n\n请使用电脑端的【爱思助手】或者【Sideloadly】，将您的 .hap 文件放到“运动健康”的 Documents 目录下！\n\n(提示: 也可以通过任意App分享文件到运动健康，或者下载覆盖到Cache目录)"];
+        return;
+    }
+    
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"请选择本地文件" message:@"检测到App沙盒中有以下表盘/应用包" preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    for (NSString *path in hapFiles) {
+        NSString *name = [path lastPathComponent];
+        [ac addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self handleSelectedFile:path];
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    
+    if ([UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+        ac.popoverPresentationController.sourceView = self.btn;
+        ac.popoverPresentationController.sourceRect = self.btn.bounds;
+    }
+    
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
     while (vc.presentedViewController) vc = vc.presentedViewController;
-    [vc presentViewController:p animated:YES completion:nil];
+    [vc presentViewController:ac animated:YES completion:nil];
 }
 
-- (void)documentPicker:(UIDocumentPickerViewController *)c
-    didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    NSURL *src = urls.firstObject;
-    if (!src) return;
-
-    BOOL a = [src startAccessingSecurityScopedResource];
-    NSString *dir = [NSSearchPathForDirectoriesInDomains(
-        NSCachesDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *dst = [dir stringByAppendingPathComponent:src.lastPathComponent];
+- (void)handleSelectedFile:(NSString *)srcPath {
+    NSString *dir = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *dst = [dir stringByAppendingPathComponent:srcPath.lastPathComponent];
     NSFileManager *fm = [NSFileManager defaultManager];
-    [fm removeItemAtPath:dst error:nil];
-    NSError *err;
-    [fm copyItemAtPath:src.path toPath:dst error:&err];
-    if (a) [src stopAccessingSecurityScopedResource];
-
-    if (!err) {
-        // 关闭旧句柄
-        if (g_hapFileHandle) { [g_hapFileHandle closeFile]; g_hapFileHandle = nil; }
-
-        g_hapPath = [dst copy];
-        g_hapChecksum = fileSHA256(g_hapPath);
-        g_hapMD5 = fileMD5(g_hapPath);
-        g_hapSHA1 = fileSHA1(g_hapPath);
-        NSDictionary *at = [fm attributesOfItemAtPath:dst error:nil];
-        g_hapFileSize = [at fileSize];
-        g_hapFileHandle = [NSFileHandle fileHandleForReadingAtPath:dst];
-        if (!g_hapFileHandle) {
-            HWSLog(@"❌ 无法打开 HAP 文件句柄！");
-        } else {
-            HWSLog([NSString stringWithFormat:@"✅ HAP 文件句柄已打开，size=%lld", g_hapFileSize]);
+    
+    if (![srcPath isEqualToString:dst]) {
+        [fm removeItemAtPath:dst error:nil];
+        NSError *err;
+        [fm copyItemAtPath:srcPath toPath:dst error:&err];
+        if (err) {
+            [self alert:@"读取失败" msg:err.localizedDescription];
+            return;
         }
-        unsigned long long sz = g_hapFileSize;
-        
-        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"准备就绪"
-            message:[NSString stringWithFormat:@"已加载文件: %@\n大小: %.1f MB\n\n【重要】请输入您自己应用的包名 (Bundle ID，如 com.yourapp.watch):\n※ 如果您已经在表中修改了与载体一致则可留空", [dst lastPathComponent], sz/1048576.0]
-            preferredStyle:UIAlertControllerStyleAlert];
-            
-        [a addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-            textField.placeholder = @"留空则使用载体应用默认值";
-            textField.clearButtonMode = UITextFieldViewModeWhileEditing;
-            // 记录之前的 bundleID（如果多次操作）方便复用
-            if (g_hapBundleID) textField.text = g_hapBundleID;
-        }];
-        
-        [a addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            UITextField *tf = a.textFields.firstObject;
-            NSString *bID = [tf.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-            if (bID.length > 0) {
-                g_hapBundleID = [bID copy];
-                HWSLog([NSString stringWithFormat:@"已设置注入的 Bundle ID: %@", g_hapBundleID]);
-            } else {
-                g_hapBundleID = nil;
-                HWSLog(@"未设置自定义 Bundle ID，将使用系统自带的");
-            }
-            [self alert:@"提示" msg:@"设置成功！\n请点击侧载按钮 > 开启劫持\n然后进入手表应用市场安装任意应用。"];
-        }]];
-        
-        UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
-        while (vc.presentedViewController) vc = vc.presentedViewController;
-        [vc presentViewController:a animated:YES completion:nil];
-    } else {
-        [self alert:@"错误" msg:err.localizedDescription];
     }
+
+    if (g_hapFileHandle) { [g_hapFileHandle closeFile]; g_hapFileHandle = nil; }
+
+    g_hapPath = [dst copy];
+    g_hapChecksum = fileSHA256(g_hapPath);
+    g_hapMD5 = fileMD5(g_hapPath);
+    g_hapSHA1 = fileSHA1(g_hapPath);
+    
+    NSDictionary *attr = [fm attributesOfItemAtPath:g_hapPath error:nil];
+    g_hapFileSize = [attr fileSize];
+    g_hapFileHandle = [NSFileHandle fileHandleForReadingAtPath:g_hapPath];
+
+    if (!g_hapFileHandle) {
+        HWSLog(@"❌ 无法打开 HAP 文件句柄！");
+        [self alert:@"错误" msg:@"无法打开 HAP 文件，可能是权限不足或文件已损坏。"];
+        return;
+    }
+    
+    HWSLog([NSString stringWithFormat:@"✅ HAP 文件句柄已打开，size=%lld", g_hapFileSize]);
+
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"准备就绪"
+        message:[NSString stringWithFormat:@"已加载文件: %@\n大小: %.1f MB\n\n【重要】请输入您自己应用的包名 (Bundle ID，如 com.yourapp.watch):\n※ 留空则使用默认值", [dst lastPathComponent], g_hapFileSize/1048576.0]
+        preferredStyle:UIAlertControllerStyleAlert];
+        
+    [a addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = @"留空则不强制修改包名";
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        if (g_hapBundleID) textField.text = g_hapBundleID;
+    }];
+    
+    [a addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        UITextField *tf = a.textFields.firstObject;
+        NSString *bID = [tf.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (bID.length > 0) {
+            g_hapBundleID = [bID copy];
+            HWSLog([NSString stringWithFormat:@"已设置注入的 Bundle ID: %@", g_hapBundleID]);
+        } else {
+            g_hapBundleID = nil;
+            HWSLog(@"未设置自定义 Bundle ID，保留原本信息");
+        }
+        [self alert:@"提示" msg:@"加载成功！\n请点击侧载按钮 > 开启劫持\n然后进入手表应用市场安装任意应用。"];
+    }]];
+    
+    UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (vc.presentedViewController) vc = vc.presentedViewController;
+    [vc presentViewController:a animated:YES completion:nil];
 }
 
 - (void)alert:(NSString *)t msg:(NSString *)m {
